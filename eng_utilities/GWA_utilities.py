@@ -1,0 +1,677 @@
+""""""
+
+from general_utilities import is_numeric, try_numeric, units_conversion_factor
+from geometry_utilities import *
+from E2K_section_utilities import cardinal_points_offsets
+import sqlite3
+from os.path import exists
+from dateutil.parser import parse
+
+
+
+## ====================
+## ===  GWA  Funcs  ===
+## ====================
+
+def check_GSA_ver(GSA_ver):
+    GSA_list = str(GSA_ver).split('.')
+    if is_numeric(GSA_list[0]):
+        GSA_num = try_numeric(GSA_list[0])
+        if len(GSA_list) > 1:
+            if is_numeric(GSA_list[1]):
+                GSA_num += try_numeric('0.' + GSA_list[1])
+        return GSA_num
+    return 10
+
+
+GSA_SECT_SHAPE = {
+    1: 'I-Section',
+    2: 'Castellated I-Sections',
+    3: 'Channels',
+    4: 'T-section',
+    5: 'Angles',
+    6: 'Double Angles',
+    7: 'CHS / Pipe',
+    8: 'Round',
+    9: 'SHS / RHS',
+    10: 'Square',
+    1033:'Ovals',
+    1034: 'Double Channels',
+}
+
+
+def import_GSA_sections():
+    """
+    # Catalogues     CatalogueData           Types           Sect
+    # CAT_NUM (K) == CATDATA_CAT_NUM      == TYPE_CAT_NUM
+    #                CATDATA_TYPE_NUM (K) == TYPE_NUM (K) == SECT_TYPE_NUM
+    #                                        TYPE_SHAPE   == SECT_SHAPE
+    #                                                        SECT_ID (K)
+
+    type_cols = ['TYPE_NUM', 'TYPE_NAME', 'TYPE_SHAPE', 'TYPE_ABR', 'TYPE_SECT_ABR', 'TYPE_SECT_FINISH']
+    catdata_cols = ['CATDATA_TYPE_NUM', 'CATDATA_CAT_NUM']
+    cat_cols = ['CAT_NUM', 'CAT_ABR', 'CAT_NAME']
+
+    """
+
+
+def sectlib_to_dict(tk_list, filepath=None, df_ready=False):
+    """
+    """
+    fp = filepath if filepath else r'C:\Program Files\Oasys\GSA 10.1\sectlib.db3'
+    if not exists(fp):
+        return {}
+    
+    conn = sqlite3.connect(fp)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    dicts = {}
+    for table, key in tk_list:
+        cur.execute(f"SELECT * From `{table}`")
+        the_dict = {}
+        rows = cur.fetchall()
+        headers = [column[0] for column in cur.description]
+        key_index = headers.index(key)
+        for i, row in enumerate(rows):
+            row_key = row[key_index]
+            if df_ready:
+                row_dict = {headers[j]:val for j, val in enumerate(row)}
+                the_dict[i] = row_dict
+            else:
+                row_dict = {headers[j]:val for j, val in enumerate(row) if j != key_index}
+                the_dict[row_key] = row_dict
+        dicts[(table, key)] = the_dict
+    conn.close()
+    return dicts
+
+
+def import_GSA_sections(filepath=None):
+    """Collates all the section data from the Oasys sectlib database, which is 
+    organised in four tables.
+    
+    # Catalogues     CatalogueData           Types           Sect
+    # CAT_NUM (K) == CATDATA_CAT_NUM      == TYPE_CAT_NUM
+    #                CATDATA_TYPE_NUM (K) == TYPE_NUM (K) == SECT_TYPE_NUM
+    #                                        TYPE_SHAPE   == SECT_SHAPE
+    #                                                        SECT_ID (K)
+
+    The following code will insert the data into a Pandas DataFrame
+    >> GSA_secs_df = pd.DataFrame.from_dict(combined_sect_dict(), orient='index')
+    >> # The important columns are as follows:
+    >> sec_cols = ['SECT_NAME', 'SECT_NUM', 'SECT_TYPE_NUM', 'SECT_SHAPE', 'SECT_SUPERSEDED', 
+            'TYPE_NAME', 'TYPE_SHAPE', 'TYPE_ABR', 'TYPE_SECT_ABR', 'TYPE_SECT_FINISH'] + \
+            ['CAT_ABR', 'CATDATA_CAT_NUM', 'CAT_NAME', 'SECT_DATE_ADDED']
+    >> GSA_secs_df[sec_cols]
+    """
+    type_cols = ['TYPE_NUM', 'TYPE_NAME', 'TYPE_SHAPE', 'TYPE_ABR', 'TYPE_SECT_ABR', 'TYPE_SECT_FINISH']
+    catdata_cols = ['CATDATA_TYPE_NUM', 'CATDATA_CAT_NUM']
+    cat_cols = ['CAT_NUM', 'CAT_ABR', 'CAT_NAME']
+    
+    tk_list = (
+        ('Catalogues', 'CAT_NUM'),
+        ('CatalogueData', 'CATDATA_TYPE_NUM'),
+        ('Types', 'TYPE_NUM'),
+        ('Sect', 'SECT_ID')
+        )
+    dicts = sectlib_to_dict(tk_list, filepath)
+    cat_dict, catdata_dict, type_dict, sect_dict  = [dicts[tk] for tk in tk_list]
+        
+    # for k, v in sect_dict.items():    
+    for i, (k, v) in enumerate(sect_dict.items()):
+        sect_type_num = v['SECT_TYPE_NUM']
+        type_data = type_dict.get(sect_type_num, {})
+        v.update({k0: v0 for k0, v0 in type_data.items() if k0 in type_cols})
+        catdata_data = catdata_dict.get(sect_type_num, {})
+        v.update({k0: v0 for k0, v0 in catdata_data.items() if k0 in catdata_cols})
+        catdata_cat_num = v.get('CATDATA_CAT_NUM', -1)
+        #catdata_cat_num = catdata_data.get('CATDATA_CAT_NUM')
+        if i in (0,1,20,50,1000):
+            print(catdata_cat_num)
+        cat_data = cat_dict.get(catdata_cat_num, {})
+        v.update({k0: v0 for k0, v0 in cat_data.items() if k0 in cat_cols})
+        sect_date_added = v['SECT_DATE_ADDED']
+        v['SECT_DATE_ADDED'] = parse(sect_date_added)
+    
+    return sect_dict
+
+
+def GWA_GEO(pts_list, units=None):
+    """"""
+    x0, y0 = pts_list[0]
+    # 'GEO P(mm) M(36361|-6881.57) L(37443.5|-6256.57) L(37443.5|-4456.57) L(36847.9|-3425) L(34986|-4500)'
+    if units:
+        return f'GEO P({units}) M({x0}|{y0}) ' + ' '.join([f'L({x}|{y})' for x, y in pts_list[1:]])
+    else:
+        return f'GEO P M({x0}|{y0}) ' + ' '.join([f'L({x}|{y})' for x, y in pts_list[1:]])
+
+
+def GWA_sec_gen(pdict):
+    """Returns mapped GWA section catalog strings for common section names,
+    such as UC, UB, W. Others could easily be added. This only works with earlier
+    GWA section definitions. In GSA 10, the section specification is more complex.
+    
+    Two development options are possible:
+    1. Section dimensions could be identified in some cases, e.g. "HSS5X.250" 
+        could be interpreted as a hollow section of diameter 5" and thickness 1/4"
+    2. It would be possible to develop a more sophisticated approach that would 
+       reference the section catalogues. This would require both catalogues to be available.
+    """
+    units = pdict.get('UNITS')
+    
+    sec_name = pdict['SHAPE'].replace('X','x')
+    if sum(tt.isnumeric() for tt in sec_name[1:].split('x') if sec_name.startswith('W')) == 2:
+        return ('CAT W ' if float(sec_name[1:].split('x')[0]) < 45 else 'CAT CA-W ') + sec_name 
+    elif sum(tt.isnumeric() for tt in sec_name[2:].split('x') if sec_name.startswith('UB')) == 3:
+        return 'CAT UB ' + sec_name
+    elif sum(tt.isnumeric() for tt in sec_name[2:].split('x') if sec_name.startswith('UC')) == 3:
+        return 'CAT UC ' + sec_name
+    elif pdict.get('SECTION_TYPE') in ('PIPE', 'STEEL_PIPE'):
+        D, T = [pdict.get(s) for s in ('OD', 'TDES')]
+        if all((D, T)):
+            return f'STD CHS({units}) {D} {T}'
+        else:
+            return 'EXPLICIT'
+    elif pdict.get('SECTION_TYPE') in ('I_SECTION', 'STEEL_I_SECTION'):
+        D, B, TW, TF = [pdict.get(s) for s in ('D', 'BF', 'TW', 'TF')]
+        if all((D, B, TW, TF)):
+            return f'STD I({units}) {D} {B} {TW} {TF}'
+        else:
+            return 'EXPLICIT'
+    elif pdict.get('SECTION_TYPE') in ('TEE', 'STEEL_TEE'):
+        D, B, TW, TF = [pdict.get(s) for s in ('D', 'BF', 'TW', 'TF')]
+        if all((D, B, TW, TF)):
+            return f'STD T({units}) {D} {B} {TW} {TF}'
+        else:
+            return 'EXPLICIT'
+    elif pdict.get('SECTION_TYPE') in ('CHANNEL', 'STEEL_CHANNEL'):
+        D, B, TW, TF = [pdict.get(s) for s in ('D', 'BF', 'TW', 'TF')]
+        if all((D, B, TW, TF)):
+            return f'STD CH({units}) {D} {B} {TW} {TF}'
+        else:
+            return 'EXPLICIT'
+    elif pdict.get('SECTION_TYPE') in ('DOUBLE_CHANNEL', 'STEEL_DOUBLE_CHANNEL'):
+        D, B, TW, TF, DIS = [pdict.get(s) for s in ('D', 'BF', 'TW', 'TF', 'DIS')]
+        if all((D, B, TW, TF)):
+            return f'STD CH({units}) {D} {B} {TW} {TF}'
+        else:
+            return 'EXPLICIT'
+    elif pdict.get('SECTION_TYPE') in ('ANGLE', 'STEEL_ANGLE'):
+        D, B, TW, TF = [pdict.get(s) for s in ('D', 'B', 'TW', 'TF')]
+        if all((D, B, TW, TF)):
+            return f'STD A({units}) {D} {B} {TW} {TF}'
+        else:
+            return 'EXPLICIT'
+    elif pdict.get('SECTION_TYPE') in ('DOUBLE_ANGLE', 'STEEL_DOUBLE_ANGLE'):
+        D, B, TW, TF, DIS = [pdict.get(s) for s in ('D', 'B', 'TW', 'TF', 'DIS')]
+        if all((D, B, TW, TF)):
+            return f'STD D({units}) {D} {0.5*(B-DIS)} {TW} {TF}'
+        else:
+            return 'EXPLICIT'
+    elif pdict.get('SECTION_TYPE') in ('BOX', 'STEEL_BOX', 'STEEL_TUBE', 'TUBE'):
+        D, B, TW, TF = [pdict.get(s) for s in ('HT', 'B', 'TW', 'TF')]
+        if not D:
+            D = B
+        if all((D, B, TW, TF)):
+            return f'STD RHS({units}) {D} {B} {TW} {TF}'
+        else:
+            return 'EXPLICIT'
+    else:
+        return 'EXPLICIT'
+
+
+def set_restraints(rstr):
+    restdict = {'UX': 'x', 'UY': 'y', 'UZ': 'z', 
+               'RX': 'xx', 'RY': 'yy', 'RZ': 'zz', }
+    return ''.join([restdict[r] for r in rstr.split()])
+
+
+def set_releases(rel):
+    if rel == 'PINNED':
+        return 'FFFRRR\tFFFFRR'
+    rels = rel.split()
+    rel_1 = ''.join(['R' if r in rels else 'F' for r in ('PI', 'V2I', 'V3I', 'TI', 'M2I', 'M3I')])
+    rel_2 = ''.join(['R' if r in rels else 'F' for r in ('PJ', 'V2J', 'V3J', 'TJ', 'M2J', 'M3J')])
+    return '\t'.join([rel_1, rel_2])
+
+
+def set_offsets(offsets, offset_sys = None, cy = 0, cz = 0):
+    """Takes 6 offset values from ETABS and converts into GSA standard
+    
+    ('LENGTHOFFI', 'OFFSETYI', 'OFFSETZI', 
+        'LENGTHOFFJ', 'OFFSETYJ', 'OFFSETZJ')
+    off_x1, off_x2, off_y, off_z
+    
+    Note that we need a coordinate system to implement the OFFSETYI settings,
+    so these have been ignored
+    """
+    off_x1, off_x2 = offsets[0], offsets[3]
+    
+    return (off_x1, off_x2, cy, cz)
+
+
+GSA_mass_dict = {
+    ('N', 'm'): 'kg', ('kN', 'm'): 't', ('MN', 'm'): 'kt',
+    ('N', 'mm'): 't', ('kN', 'mm'): 'kt',
+    ('lb', 'in'): 'lb', ('kip', 'in'): 'kip', 
+    ('lb', 'ft'): 'lb', ('kip', 'ft'): 'kip',
+}
+
+
+def set_GSA_mass_units(force_units, length_units):
+    return GSA_mass_dict.get((force_units, length_units))
+
+
+GSA_pressure_dict = {
+    ('N', 'm'): 'Pa', ('kN', 'm'): 'kPa', ('MN', 'm'): 'MPa',
+    ('N', 'cm'): 'N/cm²', ('kN', 'cm'): 'kN/cm²',
+    ('N', 'mm'): 'MPa', ('kN', 'mm'): 'GPa',
+    ('lb', 'in'): 'psi', ('kip', 'in'): 'ksi', 
+    ('lb', 'ft'): 'psf', ('kip', 'ft'): 'ksf',
+}
+
+
+def set_GSA_pressure_units(force_units, length_units):
+    return GSA_pressure_dict.get((force_units, length_units))
+
+
+def get_GSA_local_axes(line, angle=0, vertical_angle_tolerance=1.0):
+    """Returns the local axes based on GSA default definitions
+    
+    Note that GSA defaults are different from ETABS.
+    Default tolerance for verticality is one degree. To set it to be the same as
+    ETABS, set vertical_angle_tolerance = `asin(0.001)*180/pi` = 0.057296 deg (or
+    simply make the value negative, and it will be calculated automatically).
+    
+    Args:
+        line: a 2-tuple of 3-tuples representing the start and end nodes in 
+            global cartesian coordinates
+        angle (float): rotation in degrees as positive rotation about axis 1.
+        vertical_angle_tolerance (float): angle tolerance in degrees
+    
+    Returns:
+        a 3-tuple of 3-tuples representing the local unit coordinates (x,y,z) in 
+            global cartesian coordinates
+    
+    >>> fmt_3x3(get_GSA_local_axes(((0,0,0),(0,0,3.5)),0),'7.4f')
+    '( 0.0000,  0.0000,  1.0000), ( 0.0000,  1.0000,  0.0000), (-1.0000,  0.0000,  0.0000)'
+    >>> fmt_3x3(get_GSA_local_axes(((0,0,0),(0,0,3.5)),30),'7.4f')
+    '( 0.0000,  0.0000,  1.0000), (-0.5000,  0.8660,  0.0000), (-0.8660, -0.5000,  0.0000)'
+    >>> fmt_3x3(get_GSA_local_axes(((8.5,0,3.5),(8.5,1,3.5)), 30),'7.4f')
+    '( 0.0000,  1.0000,  0.0000), (-0.8660,  0.0000,  0.5000), ( 0.5000,  0.0000,  0.8660)'
+    >>> fmt_3x3(get_GSA_local_axes(((0,0,0),(7.2,9.0,3.5)),30),'7.4f')
+    '( 0.5977,  0.7472,  0.2906), (-0.7670,  0.4276,  0.4784), ( 0.2332, -0.5088,  0.8287)'
+    """
+    #vert = True
+    vector = sub3D(line[1], line[0])
+    dir1 = unit3D(vector)
+    dir2 = (0,0,0)
+    dir3 = (0,0,0)
+    #length = mag3D(vector)
+    ang_tol_rad = vertical_angle_tolerance * pi / 180 if (vertical_angle_tolerance >= 0) else asin(0.001)*180/pi
+    ang_rad = angle * pi / 180
+    
+    if abs(asin(sin3D(vector, (0, 0, 1)))) < ang_tol_rad: # Column
+        #vert = True
+        dir1 = (0, 0, 1)
+        dir2 = (0, 1, 0) if angle == 0 else (-sin(ang_rad), cos(ang_rad), 0)
+        dir3 = (-1, 0, 0) if angle == 0 else (-cos(ang_rad), -sin(ang_rad), 0)
+    else:  # Not a column
+        #vert = False
+        dir2_ = unit3D(cross3D((0,0,1), dir1))
+        dir3_ = unit3D(cross3D(dir1, dir2_))
+        dir2 = dir2_ if angle == 0 else rotQ(dir2_, ang_rad, dir1)
+        dir3 = dir3_ if angle == 0 else rotQ(dir3_, ang_rad, dir1)
+    return dir1, dir2, dir3
+
+
+
+def write_GWA(E2K_dict, GWApath, GSA_ver=10):
+    """Generates a basic GWA file (GSA text file format) 
+    from the ETABS dict generated by `run_all` in this module
+    :param E2K_dict: The dictionary containing ETABS model data that is 
+            generated by `run_all` in this module, containing the following dictionaries:
+            ['Stories', 'Points', 'LineDict', 'Lines', 'Areas', 'Groups', 'LoadCases', 'LoadCombs']
+    :param GWApath: The file name, including path, for the output GWA file
+    :param GSA_ver: This should be provided as an integer or float (e.g. 10 or 10.1)
+    :return: GWA file for reading into GSA"""
+    GSA_num = check_GSA_ver(GSA_ver)
+    units = E2K_dict['UNITS']
+    grav_dict = {'m': 9.80665, 'cm': 980.665, 'mm': 9806.65, 'in': 32.2, 'ft': 386.4}
+    grav = grav_dict.get(units.length, 9.81)
+    force_factor = units_conversion_factor(('N', units.force))
+    length_factor = units_conversion_factor(('m', units.length))
+    stress_factor = force_factor / length_factor**2
+    stress_units = set_GSA_pressure_units(units.force, units.length)
+    mass_factor = force_factor / length_factor
+    mass_units = set_GSA_mass_units(units.force, units.length)
+    
+    MAT_PROPS_dict, FRAME_PROPS_dict, SHELL_PROPS_dict, SPRING_PROPS_dict = [
+        E2K_dict.get(k1,{}).get(k2,{}) for k1, k2 in (
+        ('MATERIAL PROPERTIES', 'MATERIAL'), 
+        ('FRAME SECTIONS', 'FRAMESECTION'), 
+        ('SHELL PROPERTIES', 'SHELLPROP'),
+        ('POINT SPRING PROPERTIES', 'POINTSPRING'),
+    )]
+
+    STORY_dict = E2K_dict['STORIES - IN SEQUENCE FROM TOP']['STORY']
+    
+    NODE_dict, LINE_dict, AREA_dict = [E2K_dict.get(k1,{}).get(k2,{}) for k1, k2 in (
+        ('POINT ASSIGNS', 'POINTASSIGN'), 
+        ('LINE ASSIGNS', 'LINEASSIGN'), 
+        ('AREA ASSIGNS', 'AREAASSIGN')
+    )]
+    
+    GROUPS_dict = E2K_dict.get('GROUPS',{}).get('GROUP',{})
+    
+    with open(GWApath, 'w') as gwa:
+        # ** Writing initial lines to GWA **
+        gwa.write(r'!" This file was originally written by a Python script by the E2KtoJSON_code library"' + '\n')
+        gwa.write(r'!' + '\n')
+        gwa.write(r'! Notes:' + '\n')
+        gwa.write(r'!   All data in this file will be interpreted as being in SI units' + '\n')
+        gwa.write(r'!   (ie. N m and kg) by GSA.' + '\n')
+        gwa.write(r'!' + '\n')
+        gwa.write('\t'.join(['TITLE.1','','','','','', 'AM', '\n']))
+        
+        gwa.write('\t'.join(['UNIT_DATA.1', 'FORCE', units.force, 
+                             str(force_factor)]) + '\n')
+        gwa.write('\t'.join(['UNIT_DATA.1', 'LENGTH', units.length, 
+                             str(length_factor)]) + '\n')
+        gwa.write('\t'.join(['UNIT_DATA.1', 'DISP', units.length, 
+                             str(length_factor)]) + '\n')
+        gwa.write('\t'.join(['UNIT_DATA.1', 'SECTION', units.length, 
+                             str(length_factor)]) + '\n')
+        gwa.write('\t'.join(['UNIT_DATA.1', 'STRESS', stress_units, 
+                             str(stress_factor)]) + '\n') 
+        gwa.write('\t'.join(['UNIT_DATA.1', 'MASS', mass_units, 
+                             str(mass_factor)]) + '\n') 
+        #gwa.write('\t'.join(['UNIT_DATA.1', 'MASS', 't', '0.001']))
+        gwa.write('\t'.join(['UNIT_DATA.1', 'TIME', 's', '1']) + '\n')
+        
+        
+        # ============================
+        # =====  Mat Properties  =====
+        # ============================
+        # ** Creating Materials Database and writing to GWA ** 
+        # if ETABS_dict.get('MatProps'):
+        # MAT_STEEL.3 | num | <mat> | fy | fu | eps_p | Eh
+        # MAT_ANAL | num | MAT_ELAS_ISO | name | colour | 6 | E | nu | rho | alpha | G | damp |
+        for m_name, m_dict in MAT_PROPS_dict.items():
+            m_ID = m_dict.get('ID', '')
+            E_val = m_dict.get('E', 0)
+            nu = m_dict.get('U', 0)
+            rho_w = m_dict.get('W', 0) if m_dict.get('W') else m_dict.get('WEIGHTPERVOLUME', 0)
+            rho_m = rho_w / grav
+            alpha = m_dict.get('A', 0)
+            mat_type = m_dict.get('TYPE')
+            ostr = [str(val) for val in ['MAT_ANAL', m_ID, 'MAT_ELAS_ISO', m_name, 
+                    'NO_RGB', '6', E_val, nu, rho_m, alpha]]
+            #gwa.write('PROP_SEC.2\t{:d}\t{:s}\t\t{:s}\t{:s}\n'.format(fp, name, '', desc))
+            gwa.write('\t'.join(ostr) + '\n')
+        
+        
+        # ============================
+        # ===== Frame Properties =====
+        # ============================
+        # SECTION.2 | ref | name | memb:EXPLICIT | mat
+        # PROP_SEC.1 | num | name | colour | anal | desc | prin | type | cost |
+        # PROP_SEC.2 | num | name | colour | type | desc | anal | mat | grade |
+        # PROP_SEC.3 | num | name | colour | mat | grade | anal | desc | cost | ref_point | off_y | off_z |
+        # ** Creating Properties Database and writing to GWA **
+        mat_types = ['GENERIC', 'STEEL', 'CONCRETE', 'ALUMINIUM', 'GLASS', 'FRP', 'TIMBER']
+        for fp_name, fp_dict in FRAME_PROPS_dict.items():
+            mat_name = fp_dict.get('MATERIAL')
+            m_dict = MAT_PROPS_dict.get(mat_name, {})
+            mat_ID = m_dict.get('ID', 1)
+            fp_ID = fp_dict.get('ID', '')
+            desc = fp_dict.get('GWA', 'EXPLICIT')
+            mat_type = m_dict.get('TYPE','').upper()
+            mat_type = mat_type if (mat_type in mat_types) else 'GENERIC'
+            ostr2 = ['PROP_SEC.2', str(fp_ID), fp_name, 'NO_RGB', '', 
+                     desc, str(mat_ID), mat_type]
+            #gwa.write('PROP_SEC.2\t{:d}\t{:s}\t\t{:s}\t{:s}\n'.format(fp, name, '', desc))
+            gwa.write('\t'.join(ostr2) + '\n')
+        
+        
+        # ============================
+        # ===== Shell Properties =====
+        # ============================
+        
+        # Area properties
+        # PROP_2D.1 | num | name | axis | mat | type | thick | mass | bending
+        for sp_name, sp_dict in SHELL_PROPS_dict.items():
+            sp_ID = sp_dict.get('ID', '')
+            desc = sp_dict.get('GWA', 'EXPLICIT')
+            thickness = max([sp_dict.get(t, 0) for t in ['SLABTHICKNESS', 'WALLTHICKNESS','DECKTHICKNESS']])
+            ostr = ['PROP_2D.2',str(sp_ID), sp_name,'NO_RGB','LOCAL','1',
+                    'SHELL',str(thickness),'0.0','100.0%','100.0%','100.0%']
+            # '.format(fa, name, 'LOCAL', 1, thickness))
+            #gwa.write('PROP_SEC.2\t{:d}\t{:s}\t\t{:s}\t{:s}\n'.format(fp, name, '', desc))
+            gwa.write('\t'.join(ostr) + '\n')
+                
+        
+        # =============================
+        # ===== Spring Properties =====
+        # =============================
+        # Spring properties
+        # PROP_SPR.2 | num | name | colour | axis | type | curve_x | stiff_x 
+        #            | curve_y | stiff_y | curve_z | stiff_z | damping
+        # PROP_SPR.3 | num | name | colour | axis | SPRING | curve_x | stiff_x | curve_y | stiff_y | curve_z | stiff_z 
+        #            | curve_xx | stiff_xx | curve_yy | stiff_yy | curve_zz | stiff_zz | damping
+        # PROP_SPR.4 | num | name | colour | SPRING | curve_x | stiff_x | curve_y | stiff_y | curve_z | stiff_z 
+        #            | curve_xx | stiff_xx | curve_yy | stiff_yy | curve_zz | stiff_zz | damping
+        # PROP_SPR.4 | 2 | Gen_Spring | NO_RGB | GENERAL | 0 | 1990000000 | 0 
+        #            | 2220000000 | 0 | 5.550000128e+10 | 0 | 0 | 0 
+        #            | 0 | 0 | 4.440000102e+11 | 0
+        for i, (spr_name, spr_dict) in enumerate(SPRING_PROPS_dict.items()):
+            if not spr_dict.get('ID'):
+                spr_dict['ID'] = i+1
+            spr_ID = spr_dict.get('ID', 1) 
+            k = [[0, spr_dict.get(dir, 0)] for dir in ('UX', 'UY', 'UZ', 'RX', 'RY', 'RZ')]
+            
+            ostr = ['PROP_SPR.4', str(spr_ID), spr_name, 'NO_RGB', 'SPRING'] + \
+                   sum(k,[])
+            gwa.write('\t'.join([str(n) for n in ostr]) + '\n')
+
+
+        # =======================
+        # =====    Nodes    =====
+        # =======================
+        # POINTASSIGN  "3895"  "BASE"  RESTRAINT "UX UY"  SPRINGPROP "PSpr1"  DIAPH "S1FLEX"
+        # NODE.2 | num | name | colour | x | y | z | is_grid { | grid_plane | datum | grid_line_a | grid_line_b } | axis | is_rest { | rx | ry | rz | rxx | ryy | rzz } | is_stiff { | Kx | Ky | Kz | Kxx | Kyy | Kzz }
+        # NODE.2    46      NO_RGB  -20.95  3.377499    33.3    NO_GRID 0   REST    1   1   1   0   0   0
+        # NODE.3 | num | name | colour | x | y | z | restraint | axis |
+        #                   mesh_size | springProperty | massProperty | damperProperty
+        # NODE.3	2	name	NO_RGB	8.5	2.3	0.1	xyzxxyy	GLOBAL	0	1
+        for n_name, n_dict in NODE_dict.items():
+            nid = n_dict.get('ID', '')
+            restr = n_dict.get('RESTRAINT', None)
+            fixity = [set_restraints(restr)] if restr else []
+            mesh_size = 0
+            spr_prop = n_dict.get('SPRINGPROP')
+            spr_ID = [SPRING_PROPS_dict.get(spr_prop,{}).get('ID')] if spr_prop else []
+            more = []
+            if spr_ID:
+                more = spr_ID + more
+            if more:
+                more = [mesh_size] + more
+            if more or fixity:
+                more = fixity + ['GLOBAL'] + more
+            coords = [str(w) for w in n_dict.get('COORDS', ('', '', ''))]
+            ostr = ['NODE.3', nid, n_name, 'NO_RGB'] + \
+                coords + more
+            gwa.write('\t'.join([str(n) for n in ostr]) + '\n')
+
+
+        # =======================
+        # =====    Beams    =====
+        # =======================
+        # EL.2 | num | name | colour | type | prop | group | topo() | orient_node | orient_angle 
+        #      | is_rls { | rls { | k } } is_offset { | ox | oy | oz } | dummy
+        # EL.4 | num | name | colour | type | prop | group | topo() | orient_node | orient_angle 
+        #      | is_rls { | rls { | k } } off_x1 | off_x2 | off_y | off_z | dummy | parent
+        # EL.4  1       NO_RGB  BEAM    1   1   1   2   0   0   NO_RLS  0   0   0   0
+        # NO_RLS | RLS | STIFF  - F, R, K
+        
+        # ** Writing Beams to GWA **
+        bm_max = 1
+        for bm_name, bm_dict in LINE_dict.items():
+            bm_ID = bm_dict.get('ID', '')
+            N1 = bm_dict.get('N1', '')
+            N2 = bm_dict.get('N2', '')
+            bm_angle = bm_dict.get('ANG', 0)
+            frame_prop_name = bm_dict.get('SECTION', None)
+            fp_dict = FRAME_PROPS_dict.get(frame_prop_name, {})
+            prop_num = fp_dict.get('ID', 1)
+            
+            # Offsets
+            # rigid_zone = bm_dict.get('RIGIDZONE', 0) # not implemented
+            offset_sys = bm_dict.get('OFFSETSYS', None)
+            
+            offsets = [bm_dict.get(offset, 0) for offset in 
+                       ('LENGTHOFFI', 'OFFSETYI', 'OFFSETYI', 
+                        'LENGTHOFFJ', 'OFFSETYJ', 'OFFSETYJ')]
+            
+            cardinal_point = bm_dict.get('CARDINALPT', 0)
+            if cardinal_point:
+                length_unit = fp_dict.get('UNITS')
+                u_conv = units_conversion_factor((length_unit, units.length)) if length_unit else 1.0
+                D, B, CY, CZ = [u_conv * fp_dict.get(dim, 0) for dim in ('D','B', 'C3', 'C2')]
+                off_y, off_z = cardinal_points_offsets(cardinal_point, D, B, CY=0, CZ=0)
+            else:
+                off_y, off_z = 0, 0
+
+            if any(offsets):
+                 # NB OFFSETYI etc and offset_sys are not implemented
+                offsets = set_offsets(offsets, offset_sys, off_y, off_z)
+            else:
+                offsets = (0, 0, off_y, off_z)
+            offsets_txt = '\t'.join([str(n) for n in offsets])
+            
+            # Releases
+            release = bm_dict.get('RELEASE', '')   # "TI M2I M3I"
+            
+            if release:
+                releases_txt = 'RLS\t' + set_releases(release)
+            else:
+                releases_txt = 'NO_RLS'
+            
+            # GSA cannot do property modifications for individual members
+            #propmods = [bm_dict.get(propmod, 1) for propmod in 
+            #           ('PROPMODA', 'PROPMODA2', 'PROPMODA3', 
+            #            'PROPMODT', 'PROPMODI22', 'PROPMODI33')]
+            # bm_dict.get('PROPMODM', 1)
+            # bm_dict.get('PROPMODW', 1)
+                      
+            
+            #ostr2 = [str(val) for val in ['EL.2', str(bm_ID), bm_name, 'NO_RGB', 'BEAM', prop_num, prop_num, 
+            #        N1, N2, '', bm_angle, ]]
+            #gwa.write('EL.2\t{:d}\t{:s}\t\t{:s}\t{:d}\t{:d}\t{}\t{}\t\t{:f}\n'.format(b + 1, bm_name, 'BEAM', prop_num, prop_num, ndict.get(pt_1), ndict.get(pt_2),bm_angle))
+            #gwa.write('\t'.join(ostr2) + '\n')
+            ostr4 = [str(val) for val in ['EL.4', str(bm_ID), bm_name, 'NO_RGB', 'BEAM', prop_num, prop_num, 
+                    N1, N2, '', bm_angle]]
+            gwa.write('\t'.join(ostr4 + [releases_txt] + [offsets_txt]) + '\n')
+            bm_max = max(bm_max, bm_dict.get('ID', 0))
+        
+        
+        # ========================
+        # =====    Shells    =====
+        # ========================
+        # EL.2 | num | name | colour | type | prop | group | topo() | orient_node | orient_angle | is_rls { | rls { | k } } is_offset { | ox | oy | oz } | dummy
+        # EL.4  1       NO_RGB  BEAM    1   1   1   2   0   0   NO_RLS  0   0   0   0
+        # ** Writing Beams to GWA **
+        for sh_name, sh_dict in AREA_dict.items():
+            sh_ID = sh_dict.get('ID', '')
+            num_pts = sh_dict.get('NumPts')
+            nodes = [sh_dict.get('N'+str(n+1), '') for n in range(num_pts)]
+            nodes_string = '\t'.join([str(n) for n in nodes])
+            #sh_angle = sh_dict.get('ANG', 0)
+            
+            # These should be added to assemblies
+            #pier = sh_dict.get('PIER', None)
+            #spandrel = sh_dict.get('SPANDREL', None)
+            #diaphragm = sh_dict.get('DIAPH', None)
+            
+            shell_prop_name = sh_dict.get('SECTION', None)
+            sp_dict = SHELL_PROPS_dict.get(shell_prop_name, {})
+            prop_num = sp_dict.get('ID', 1)
+            if num_pts == 3:
+                #gwa.write('EL.2\t{:d}\t{:s}\t\t{:s}\t{:d}\t{:d}\t{}\n'.format(
+                #    bmax + a + 1, area_name, 'TRI3', prop_num, prop_num, pts_txt))
+                ostr = ['EL.2', bm_max + sh_ID, sh_name, 'NO_RGB', 'TRI3', 
+                    prop_num, prop_num, nodes_string]
+                gwa.write('\t'.join([str(val) for val in ostr]) + '\n')
+            elif num_pts == 4:
+                ostr = ['EL.2', bm_max + sh_ID, sh_name, 'NO_RGB', 'QUAD4', 
+                    prop_num, prop_num, nodes_string]
+                gwa.write('\t'.join([str(val) for val in ostr]) + '\n')
+            else:
+                # TODO: may want to create members with polylines > quads
+                #el_type = None
+                pass
+        
+        
+        # =======================
+        # =====   Storeys   =====
+        # =======================
+        
+        # ** Writing Storey Grid Planes to GWA **
+        # GSA 10   GRID_PLANE.4  1   SPIRE-11    STOREY  0   247.967 0   0
+        # GSA 8.7  GRID_PLANE.1   1   Ground floor    0   ELEV    0.000000    all     ONE 0.000000    0   0.0100000   STOREY  PLANE_CORNER    0.000000    0.000000
+        # GSA 8.7  GRID_PLANE.1\t{num}\t{name}\t{axis}\tELEV\t{elev}\tall\tONE\t0.0\t0\t.01\tSTOREY\tPLANE_CORNER\t0.0\t0.0\n
+        
+        for s, (story, data) in enumerate(STORY_dict.items()):
+            abs_elev = data.get('ABS_ELEV')
+            if GSA_num < 10:
+                axis = 0
+                ostr = ['GRID_PLANE', str(s+1), story, str(axis), 'ELEV', str(abs_elev), 
+                        'all\tONE\t0.0\t0\t.01\tSTOREY\tPLANE_CORNER\t0.0\t0.0']
+                gwa.write('\t'.join(ostr) + '\n')
+            else:
+                ostr = ['GRID_PLANE.4', str(s+1), story, 'STOREY\t0',str(abs_elev),'0\t0']
+                gwa.write('\t'.join(ostr) + '\n')
+            
+        
+        # ======================
+        # =====   Groups   =====
+        # ======================
+        
+        # ** Writing Groups / Lists to GWA **
+        # NB ETABS can have mixed groups, but GSA separates them by object type - e.g. beam lists, node lists etc 
+        ['POINT' 'LINE' 'AREA']
+        list_id = 1
+        if GROUPS_dict: # in case there are no Groups in the file
+            for g_name, g_data in GROUPS_dict.items():
+                n_list = []   
+                el_list = []
+                if g_data.get('POINT'):
+                    for pt in g_data.get('POINT', []):
+                        n_ID = NODE_dict.get(pt,{}).get('ID')
+                        if n_ID:
+                            n_list.append(n_ID)
+                if g_data.get('LINE'):
+                    for line in g_data.get('LINE', []):
+                        bm_ID = LINE_dict.get(line,{}).get('ID')
+                        if bm_ID:
+                            el_list.append(bm_ID)
+                if g_data.get('AREA'):
+                    for area in g_data.get('AREA', []):
+                        sh_ID = AREA_dict.get(area,{}).get('ID')
+                        if sh_ID:
+                            el_list.append(bm_max + sh_ID)
+                if len(n_list) > 0:
+                    # LIST | num | name | type | list
+                    gwa.write('\t'.join(['LIST.1', str(list_id), g_name, 'NODE']))
+                    gwa.write('\t')
+                    gwa.write(' '.join([str(n) for n in n_list]))
+                    gwa.write('\n')
+                    list_id += 1
+                if len(el_list) > 0:
+                    gwa.write('\t'.join(['LIST.1', str(list_id), g_name, 'ELEMENT']))
+                    gwa.write('\t')
+                    gwa.write(' '.join([str(n) for n in el_list]))
+                    gwa.write('\n')
+                    list_id += 1
+
+        gwa.write('END\n')
+
