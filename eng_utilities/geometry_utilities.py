@@ -144,3 +144,80 @@ def rotR(self, ang, other):
     #    scale3D(other, (1.0 - cos(ang)) * (dot3D(self, other)))
     return add3D(add3D(scale3D(self, cos(ang)), scale3D(cross3D(other, self), sin(ang))), 
         scale3D(other, (1.0 - cos(ang)) * (dot3D(self, other))))
+
+
+def fmt_3x3(dc, fmt='7.4f'):
+    """For pretty-printing a 3x3 matrix of unit vectors (3-tuple of 3-tuples)
+    NB This is used by test functions, so do not change in isolation"""
+    #return ', '.join([f'({x:6.3f}, {y:6.3f}, {z:6.3f})' for x, y, z in dc])
+    return ', '.join([f'({x:{fmt}}, {y:{fmt}}, {z:{fmt}})' for x, y, z in dc])
+
+
+def magND(v):
+    return sum(vv*2 for vv in v) ** 0.5
+
+
+def unitND(v):
+    s = magND(v)
+    return [s * vv for vv in v]
+
+
+def addND(v1, v2):
+    return [vv1 + vv2 for vv1, vv2 in zip(v1, v2)]
+
+
+def subND(v1, v2):
+    return [vv1 - vv2 for vv1, vv2 in zip(v1, v2)]
+
+
+def dotND(v1, v2):
+    return sum(vv1 * vv2 for vv1, vv2 in zip(v1, v2))
+
+
+def scaleND(v, s):
+    return [s * vv for vv in v]
+
+
+def Madd(M1, M2):
+    return [[a+b for a, b in zip(c, d)] for c, d in zip(M1, M2)]
+
+
+def Mtranspose(M):
+    return list(zip(*M))
+
+
+def Mmult(M1, M2):
+    return [[sum(a*b for a, b in zip(c, d)) for c in Mtranspose(M2)] for d in M1]
+
+
+def MI(n):
+    return [[1 if i==j else 0 for i in range(n)] for j in range(n)]
+
+
+def Minv(M):
+    """Check that diagonals are not zero..."""
+    n = len(M)
+    if sum(len(M)!=n for m in M):
+        raise ValueError('Matrix is not square.')
+    
+    Mm = M.copy()
+    Im = MI(n)
+    k=1
+    
+    for i in range(n):
+        s = Mm[i][i]
+        while s==0 and i+k < n:
+            Mm[i] = addND(Mm[i], Mm[i+k])
+            Im[i] = addND(Im[i], Im[i+k])
+            k+=1
+            s = Mm[i][i]
+        if s == 0:
+            raise ValueError('Singular Matrix')
+        Mm[i] = scaleND(Mm[i], 1 / s)
+        Im[i] = scaleND(Im[i], 1 / s)
+        for j in range(n):
+            if j!=i and Mm[j][i] != 0:
+                s = Mm[j][i]
+                Mm[j] = subND(Mm[j], scaleND(Mm[i], s))
+                Im[j] = subND(Im[j], scaleND(Im[i], s))
+    return Im #, Mm
