@@ -8,7 +8,9 @@ import pickle
 from os.path import exists, isfile, join, basename, splitext
 from general_utilities import is_numeric, try_numeric
 from E2K_postprocessing import *
+from collections import namedtuple
 
+LoadKey = namedtuple('LoadKey', 'MEMBER STORY LOADCASE')
 
 
 def is_key(string):
@@ -99,14 +101,26 @@ def try_merge(a_dict, data_coll):
             a_dict[data[0]] = data[1]
 
 
-def load_parser(line):
-    """Parses E2K text lines under """
-    d = dict(gather(line_split(line)))
-    #print(d)
-    key = tuple(list(d.get('LINELOAD')) + [d.get('LC')])
+def load_func(the_dict, line): # a_dict is 
+    line_dict = dict(line)
+    loadclass = list(line_dict.keys())[0]
+    member, story = line_dict.get(loadclass)
+    key = tuple([member, story, line_dict.get('LC')])
+    
+    if not the_dict.get(loadclass):
+        the_dict[loadclass] = dict()
+        print(f'Starting to parse {loadclass}')
+    a_dict = the_dict[loadclass]
+    #print('a_dict', a_dict)
+    a_dict[key] = a_dict.get(key, []) + list(load_parser(line_dict))
+
+    
+def load_parser(d):
+    """
+    For loadclass = 'POINTLOAD', 'LINELOAD' or 'AREALOAD'"""
     ltype = d.get('TYPE')
-    ldict = {'TYPE': ltype}
-    load_data = None
+    direction = d.get('DIR', None)
+    ldict = {'TYPE': ltype, 'DIR': direction}
     if ltype == 'TRAPF': 
         load_values = [try_numeric(d.get(item)) for item in ('FSTART', 'FEND', 'RDSTART', 'RDEND')]
         load_data = (load_values[2], load_values[0]), (load_values[3], load_values[1])
@@ -114,13 +128,18 @@ def load_parser(line):
         ldict.update({'DATA': load_data, 'AVE_LOAD': ave_load})
     elif ltype == 'UNIFF':
         load_value = try_numeric(d.get('FVAL'))
-        load_data = ((0, load_data), (1, load_data))
+        load_data = ((0, load_value), (1, load_value))
         ave_load = load_value
         ldict.update({'DATA': load_data, 'AVE_LOAD': ave_load})
     elif ltype == 'POINTF':
-        load_data = [try_numeric(d.get(item)) for item in ('FVAL', 'RDIST')]
-        ldict.update({'DATA': load_data})
-    return {key:ldict}
+        load_data = [try_numeric(d.get(item)) for item in ('FVAL', 'RDIST')][::-1]
+        ldict.update({'DATA': tuple(load_data)})    
+    elif ltype == 'FORCE':
+        forces = ('FX', 'FY', 'FZ', 'MX', 'MY', 'MZ')
+        load_data = [try_numeric(d.get(item)) for item in forces]
+        ldict.update({'DATA': tuple(load_data)})    
+    #return {key:[ldict]}
+    return [ldict]
 
 
 ## NOTE: `Force Line` refers to a specific polyline
@@ -256,12 +275,15 @@ def E2KtoDict(E2K_model_path, **kwargs):
             #    the_dict = E2K_dict[key]
             #    the_func = point_parse
             
-            #elif line.startswith(r'$ POINT OBJECT LOADS'):
-            #    ignore_lines = True
-            #    key = line[2:].strip()
-            #    E2K_dict[key] = dict()
-            #    the_dict = E2K_dict[key]
-            #    the_func = point_parse
+            elif (line.startswith(r'$ POINT OBJECT LOADS') or 
+                    line.startswith(r'$ FRAME OBJECT LOADS') or 
+                    line.startswith(r'$ SHELL OBJECT LOADS')):
+                print(f'Starting to process {line.strip()}')
+                ignore_lines = False
+                key = line[2:].strip()
+                E2K_dict[key] = dict()
+                the_dict = E2K_dict[key]
+                the_func = load_func
             
             # Default parsing set up
             elif line.startswith(r'$'):
