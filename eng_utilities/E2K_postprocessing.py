@@ -162,8 +162,7 @@ def enhance_CAT_properties(f_dict, m_dict,
 def get_weight_density(m_dict):
     # WEIGHTPERVOLUME & TYPE
     # W & DESIGNTYPE (<= v9.7)
-    wt_dens = m_dict.get('W') if m_dict.get('W') else m_dict.get('WEIGHTPERVOLUME', 0)
-    return try_numeric(wt_dens)
+    return m_dict.get('W',0) if m_dict.get('W') else m_dict.get('WEIGHTPERVOLUME',0)
 
 
 def get_mat_type(m_dict):
