@@ -1,19 +1,17 @@
 """"""
 
-from eng_utilities.general_utilities import try_numeric
 from itertools import accumulate
 from operator import itemgetter
 from collections import namedtuple
 from dateutil import parser
-from general_utilities import unit_validate, Units
 from os.path import exists, isfile, join, basename, splitext
 
-from general_utilities import try_numeric
-from geometry_utilities import *
-from section_utilities import sec_area_3D
-from E2K_section_utilities import *
-from GWA_utilities import GWA_sec_gen, GWA_GEO
-from polyline_utilities import perim_full_props
+from eng_utilities.general_utilities import try_numeric, unit_validate, Units
+from eng_utilities.geometry_utilities import *
+from eng_utilities.polyline_utilities import sec_area_3D
+from eng_utilities.E2K_section_utilities import *
+from eng_utilities.GWA_utilities import GWA_sec_gen, GWA_GEO
+from eng_utilities.polyline_utilities import perim_full_props
 
 
 Frame_Agg_Props = namedtuple('Frame_Agg_Props', 'material mat_type wt_density area')
@@ -33,15 +31,22 @@ def enhance_frame_properties(f_name, f_dict, E2K_dict,
        SD Section, Embedded)
     """
     mat = f_dict.get('MATERIAL')
-    if mat:
-        MAT_PROP_dict = E2K_dict['MATERIAL PROPERTIES'].get('MATERIAL') if E2K_dict.get('MATERIAL PROPERTIES') else None
-        if MAT_PROP_dict:
-            m_dict = MAT_PROP_dict.get(mat)
+    if not mat:
+        print(f'MATERIAL keyword is not present in f_dict: \n\t{f_dict}')
+    MAT_PROP_dict = E2K_dict.get('MATERIAL PROPERTIES',{}).get('MATERIAL',{})
+    if not MAT_PROP_dict:
+        print(f'MAT_PROP_dict is missing')
+    m_dict = MAT_PROP_dict.get(mat, {})
+    if not m_dict:
+        print(f'The material for {f_name} ({mat}) is not in MAT_PROP_dict')
+        #raise ValueError('Missing material dictionary data')
     
     temp_f_dict_list = []
     res = None
     
-    if f_dict['SHAPE'] == 'SD Section':
+    if f_dict['SHAPE'] == 'Auto Select List':
+        pass
+    elif f_dict['SHAPE'] == 'SD Section':
         pass  # this is addressed later
     elif 'Encasement' in f_dict['SHAPE']:
         enhance_encased_properties(f_dict, E2K_dict)
@@ -93,7 +98,7 @@ def enhance_CALC_properties(f_dict, m_dict):
         props = A_props_func(f_dict)
     elif shape in ('Steel Double Angle', 'Concrete Double Angle', 'Double Angle'): 
         props = AA_props_func(f_dict)
-    elif shape in ('Steel Plate', 'Concrete Rectangular', 'Rectangle', 'RECTANGLE'): 
+    elif shape in ('Steel Plate', 'Concrete Rectangular', 'Rectangular', 'Rectangle', 'RECTANGLE'): 
         props = R_props_func(f_dict)
     elif shape in ('Steel Rod', 'Steel Circle', 'Concrete Circle', 'Circle', 'CIRCLE'): 
         props = C_props_func(f_dict)
@@ -157,13 +162,15 @@ def enhance_CAT_properties(f_dict, m_dict,
 def get_weight_density(m_dict):
     # WEIGHTPERVOLUME & TYPE
     # W & DESIGNTYPE (<= v9.7)
-    return m_dict.get('W') if m_dict.get('W') else m_dict.get('WEIGHTPERVOLUME')
+    wt_dens = m_dict.get('W') if m_dict.get('W') else m_dict.get('WEIGHTPERVOLUME', 0)
+    return try_numeric(wt_dens)
 
 
 def get_mat_type(m_dict):
     # WEIGHTPERVOLUME & TYPE
     # W & DESIGNTYPE (<= v9.7)
-    return m_dict.get('DESIGNTYPE') if m_dict.get('W') else m_dict.get('TYPE')
+    mtype = m_dict.get('DESIGNTYPE','') if m_dict.get('W') else m_dict.get('TYPE','')
+    return mtype.casefold()
 
 
 def enhance_shell_props(s_dict, MAT_PROP_dict):
@@ -184,8 +191,8 @@ def enhance_shell_props(s_dict, MAT_PROP_dict):
         D_AVE = s_dict.get('D_AVE')
         T_AVE = s_dict.get('T_AVE')
         agg_props = []
-        agg_props.append(Shell_Agg_Props(conc_mat, mc_type.casefold(), mc_unit_wt, D_AVE))
-        agg_props.append(Shell_Agg_Props(deck_mat, md_type.casefold(), md_unit_wt, T_AVE))
+        agg_props.append(Shell_Agg_Props(conc_mat, mc_type, mc_unit_wt, D_AVE))
+        agg_props.append(Shell_Agg_Props(deck_mat, md_type, md_unit_wt, T_AVE))
         s_dict['Shell_Agg_Props'] = agg_props
         
     elif (s_dict.get('PROPTYPE').casefold() == 'wall'): # WALL
@@ -283,6 +290,9 @@ def CONTROLS_PP(E2K_dict):
         units_info = control_dict.get('UNITS')
         units = list(units_info.keys())[0]
         validated_units = [unit_validate(unit) for unit in units]
+        if len(validated_units) == 2:
+            temp_unit = 'C' if validated_units[1] in ('mm', 'dm', 'cm', 'm') else 'F'
+            validated_units.append(temp_unit)
         E2K_dict['UNITS'] = Units(*validated_units)
 
 
@@ -647,10 +657,10 @@ def LINE_ASSIGNS_PP(E2K_dict):
     # Get reference to sections 
     main_key = 'FRAME SECTIONS'
     sub_key = 'FRAMESECTION'
-    FRAME_PROP_dict = get_E2K_subdict(E2K_dict, main_key, sub_key)
+    FRAME_PROP_dict = E2K_dict.get(main_key, {}).get(sub_key, {})
     
     # Check LINES_dict that is to be referenced
-    LINES_dict = E2K_dict('LINE CONNECTIVITIES', {}).get('LINE', {})
+    LINES_dict = E2K_dict.get('LINE CONNECTIVITIES', {}).get('LINE', {})
 
     main_key = 'LINE ASSIGNS'
     sub_key = main_key[:-1].replace(' ','')
@@ -785,6 +795,18 @@ def AREA_ASSIGNS_PP(E2K_dict):
     """
     my_log = []
     
+
+    ## == main processes == ##
+    main_key = 'AREA ASSIGNS'
+    sub_key = main_key[:-1].replace(' ','')
+    SHELLS_dict = E2K_dict.get(main_key,{}).get(sub_key,{})
+
+    if not SHELLS_dict:
+        return
+
+    # Area Connectivities
+    AREAS_dict = E2K_dict('AREA CONNECTIVITIES',{}).get('AREA',{})
+    
     # Get reference to story elevations
     main_key = 'STORIES - IN SEQUENCE FROM TOP'
     sub_key = 'STORY'
@@ -819,24 +841,14 @@ def AREA_ASSIGNS_PP(E2K_dict):
     sub_key = 'SHELLPROP'
     SHELL_PROP_dict = get_E2K_subdict(E2K_dict, main_key, sub_key)    
 
-    # Area Connectivities
-    if E2K_dict.get('AREA CONNECTIVITIES'):
-        AREAS_dict = E2K_dict['AREA CONNECTIVITIES'].get('AREA')
-    
-    ## == main processes == ##
-    main_key = 'AREA ASSIGNS'
-    sub_key = main_key[:-1].replace(' ','')
-    
     all_OK = False # Final checks
-    if E2K_dict.get(main_key) and story_flag and nodes_flag and AREAS_dict:
-        if E2K_dict[main_key].get(sub_key):
-            SHELLS_dict = E2K_dict[main_key][sub_key]
-            SHELLS_keys  = SHELLS_dict.keys()
+    if story_flag and nodes_flag and AREAS_dict:
+        SHELLS_keys  = SHELLS_dict.keys()
 
-            # Check if dictionary has already been processed
-            # If it has, we don't want this messing with the IDs
-            if not SHELLS_dict[list(SHELLS_keys)[0]].get('ID'):
-                all_OK = True
+        # Check if dictionary has already been processed
+        # If it has, we don't want this messing with the IDs
+        if not SHELLS_dict[list(SHELLS_keys)[0]].get('ID'):
+            all_OK = True
     
     if all_OK:    
         # Lookup all nodes (1, 2, 3, etc) and convert into NODE references
@@ -967,11 +979,11 @@ def MEMBER_quantities_summary(E2K_dict, descending = True):
     dictionaries inside the main dictionary with keys: 
         (story, member type, material type, material name)    
     """
-    MEMBERS_dict = E2K_dict['LINE ASSIGNS']['LINEASSIGN']
-    SHELLS_dict = E2K_dict['AREA ASSIGNS']['AREAASSIGN']
+    MEMBERS_dict = E2K_dict.get('LINE ASSIGNS', {}).get('LINEASSIGN', {})
+    SHELLS_dict = E2K_dict.get('AREA ASSIGNS', {}).get('AREAASSIGN', {})
     for name, M_dict in (('MEMBERS SUMMARY', MEMBERS_dict), ('SHELLS SUMMARY', SHELLS_dict)):
         sum_dict = quantities_summary(M_dict)
-        STORY_dict = E2K_dict['STORIES - IN SEQUENCE FROM TOP']['STORY']
+        STORY_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('STORY', {})
         if descending:
             story_order = STORY_dict.keys()
         else:
@@ -988,3 +1000,14 @@ def MEMBER_quantities_summary(E2K_dict, descending = True):
             #E2K_dict[name] = {k:sum_dict.get(k) for k in d2list}
         #else:
         #    E2K_dict[name] = {k:sum_dict.get(k) for k in d2list[::-1]}
+
+
+def MODEL_quantities_summary(E2K_dict, descending = True):
+    """Extracts the materials quantities and places them into 
+    dictionaries inside the main dictionary with keys: 
+        (story, member type, material type, material name)    
+    """
+    # TODO calculate summaries in the Notebook...
+    MEMBERS_qdict = E2K_dict.get('MEMBERS SUMMARY', {})
+    SHELLS_qdict = E2K_dict.get('SHELLS SUMMARY', {})
+
