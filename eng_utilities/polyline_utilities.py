@@ -1,6 +1,6 @@
 """"""
 
-from geometry_utilities import *
+from eng_utilities.geometry_utilities import *
 
 def bounding_box(coords):
     """Runs through a collection of x,y tuple pairs and 

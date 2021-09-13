@@ -1,11 +1,12 @@
 """"""
 
-from general_utilities import is_numeric, try_numeric, units_conversion_factor
-from geometry_utilities import *
-from E2K_section_utilities import cardinal_points_offsets
 import sqlite3
 from os.path import exists
 from dateutil.parser import parse
+
+from eng_utilities.general_utilities import is_numeric, try_numeric, units_conversion_factor
+from eng_utilities.geometry_utilities import *
+from eng_utilities.E2K_section_utilities import cardinal_points_offsets
 
 
 
@@ -38,21 +39,6 @@ GSA_SECT_SHAPE = {
     1033:'Ovals',
     1034: 'Double Channels',
 }
-
-
-def import_GSA_sections():
-    """
-    # Catalogues     CatalogueData           Types           Sect
-    # CAT_NUM (K) == CATDATA_CAT_NUM      == TYPE_CAT_NUM
-    #                CATDATA_TYPE_NUM (K) == TYPE_NUM (K) == SECT_TYPE_NUM
-    #                                        TYPE_SHAPE   == SECT_SHAPE
-    #                                                        SECT_ID (K)
-
-    type_cols = ['TYPE_NUM', 'TYPE_NAME', 'TYPE_SHAPE', 'TYPE_ABR', 'TYPE_SECT_ABR', 'TYPE_SECT_FINISH']
-    catdata_cols = ['CATDATA_TYPE_NUM', 'CATDATA_CAT_NUM']
-    cat_cols = ['CAT_NUM', 'CAT_ABR', 'CAT_NAME']
-
-    """
 
 
 def sectlib_to_dict(tk_list, filepath=None, df_ready=False):
