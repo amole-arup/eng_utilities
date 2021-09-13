@@ -7,8 +7,8 @@ def test_always_passes():
     assert True
 
 
-def test_always_fails():
-    assert False
+#def test_always_fails():
+#    assert False
 
 
 # ============================
@@ -91,7 +91,7 @@ $ LOAD COMBINATIONS
 """
 
 
-from E2K_parsing import load_parser, gather, line_split
+from eng_utilities.E2K_parsing import load_parser, gather, line_split
 
 pt_ld1 = """$ POINT OBJECT LOADS
   POINTLOAD  "4357"  "L008"  TYPE "FORCE"  LC "BLAST"    FZ -1950
@@ -99,14 +99,6 @@ pt_ld1 = """$ POINT OBJECT LOADS
   POINTLOAD  "4357"  "L008"  TYPE "FORCE"  LC "SDL"    FZ -97.02  MX -268.9
 """
 
-ln_ld1 = """$ FRAME OBJECT LOADS
-  LINELOAD  "C19"  "L024"  TYPE "POINTF"  DIR "1"  LC "TEST"  FVAL -1000  RDIST 0
-  LINELOAD  "B380"  "L003"  TYPE "UNIFF"  DIR "GRAV"  LC "SDLF"  FVAL 3.2
-  LINELOAD  "B1897"  "L043"  TYPE "TRAPF"  DIR "GRAV"  LC "SDLF"  FSTART 4.3  FEND 4.3  RDSTART 0  RDEND 0.5  
-  LINELOAD  "B1897"  "L043"  TYPE "TRAPF"  DIR "GRAV"  LC "SDLF"  FSTART 4.3  FEND 4.3  RDSTART 0.5  RDEND 1  
-  LINELOAD  "B383"  "L040"  TYPE "UNIFF"  DIR "GRAV"  LC "SDLF"  FVAL 4.3
-  LINELOAD  "B5721"  "L040"  TYPE "POINTF"  DIR "GRAV"  LC "SW"  FVAL 95  RDIST 0.25
-"""
 
 sh_ld1 = """$ SHELL OBJECT LOADS
   AREALOAD  "F566"  "BM2"  TYPE "UNIFF"  DIR "GRAV"  LC "SDL"  FVAL 1.6
@@ -115,6 +107,15 @@ sh_ld1 = """$ SHELL OBJECT LOADS
 
 
 def test_load_parser():
+    ln_ld1 = """$ FRAME OBJECT LOADS
+        LINELOAD  "C19"  "L024"  TYPE "POINTF"  DIR "1"  LC "TEST"  FVAL -1000  RDIST 0
+        LINELOAD  "B380"  "L003"  TYPE "UNIFF"  DIR "GRAV"  LC "SDLF"  FVAL 3.2
+        LINELOAD  "B1897"  "L043"  TYPE "TRAPF"  DIR "GRAV"  LC "SDLF"  FSTART 4.3  FEND 4.3  RDSTART 0  RDEND 0.5  
+        LINELOAD  "B1897"  "L043"  TYPE "TRAPF"  DIR "GRAV"  LC "SDLF"  FSTART 4.3  FEND 4.3  RDSTART 0.5  RDEND 1  
+        LINELOAD  "B383"  "L040"  TYPE "UNIFF"  DIR "GRAV"  LC "SDLF"  FVAL 4.3
+        LINELOAD  "B5721"  "L040"  TYPE "POINTF"  DIR "GRAV"  LC "SW"  FVAL 95  RDIST 0.25
+    """
+    
     assert ([load_parser(dict(tuple(gather(line_split(line))))) for line in ln_ld1.split('\n')[1:4] if len(line) > 0] == 
     [[{'TYPE': 'POINTF', 'DIR': 1, 'DATA': (0, -1000)}],
         [{'TYPE': 'UNIFF',
