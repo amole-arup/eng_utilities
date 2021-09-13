@@ -1,6 +1,5 @@
 """"""
 
-
 from math import pi, sin, cos, tan, atan, atan2, asin, acos, exp, log, log10
 
 
@@ -27,9 +26,19 @@ def ang2D(pt):
     return atan2(pt[1],pt[0])
 
 
+def scale2D(v,scale):
+    """Returns a scaled 2D vector"""
+    return (v[0] * scale, v[1] * scale)
+
+
 def sub2D(v1,v2):
     """Vector subtraction of v2 from v1"""
     return (v1[0] - v2[0], v1[1] - v2[1])
+
+
+def cross2D(v1,v2):
+    """calculates the scalar cross product magnitude of two 2D vectors, v1 and v2"""
+    return v1[0]*v2[1] - v1[1]*v2[0]
 
 
 def outer2D(v1, v2):
@@ -37,9 +46,24 @@ def outer2D(v1, v2):
     return v1[0]*v2[1] - v1[1]*v2[0]
 
 
+def dot2D(v1,v2):
+    """calculates the scalar dot product of two 2D vectors, v1 and v2"""
+    return v1[0]*v2[0] + v1[1]*v2[1]
+
+
 def inner2D(v1, v2):
     """Calculates the inner product of two 2D vectors, v1 and v2"""
     return v1[0]*v2[0] + v1[1]*v2[1]
+
+
+def sin2D(v1, v2):
+    """calculates the sine of the angle between two 2D vectors, v1 and v2
+    using the magnitude of the cross product of the normalised vectors."""    
+    if mag2D(v1) * mag2D(v2) == 0.0 :
+        raise ValueError('Both vectors should have non-zero magnitude')
+    else:
+        scale = 1 / mag2D(v1) / mag2D(v2)
+        return cross2D(v1, v2) * scale
 
 
 def cos_sim2D(v1, v2):
@@ -59,8 +83,18 @@ def rotate2D(pt, ang):
     return mag2D(pt) * cos(ang + ang2D(pt)), mag2D(pt) * sin(ang + ang2D(pt))
 
 
-# ============================================
-# ============= 3 D ===========
+def planar_angle2D(v1, v2):
+    """returns the angle of one vector relative to the other in the 
+    plane defined by the normal (default is in the XY plane)
+    NB This algorithm avoids carrying out a coordinate transformation 
+    of both vectors. However, it only works if both vectors are in that 
+    plane to start with. """
+    return atan2(sin2D(v1, v2), cos_sim2D(v1, v2))
+
+
+# ===========================
+# ========== 3 D ============
+# ===========================
 
 def dist3D(pt1, pt2):
     """Returns distance between two 3D points (as two 3-tuples)"""
@@ -106,13 +140,15 @@ def cross3D(v1, v2):
     return (v1[1]*v2[2] - v1[2]*v2[1], v1[2]*v2[0] - v1[0]*v2[2], v1[0]*v2[1] - v1[1]*v2[0])
 
 
-def sin3D(v1, v2):
+def sin3D(v1, v2, as_scalar = True):
     """calculates the sine of the angle between two 3D vectors, v1 and v2
     using the magnitude of the cross product of the normalised vectors."""    
     if mag3D(v1) * mag3D(v2) == 0.0 :
         raise ValueError('Both vectors should have non-zero magnitude')
     else:
-        return mag3D(cross3D(v1, v2)) / mag3D(v1) / mag3D(v2)
+        scale = 1 / mag3D(v1) / mag3D(v2)
+        vec = scale3D(cross3D(v1, v2), scale)
+        return mag3D(vec) if as_scalar else vec
 
 
 def cos_sim3D(v1, v2):
@@ -122,6 +158,15 @@ def cos_sim3D(v1, v2):
         raise ValueError('Both vectors should have non-zero magnitude')
     else:
         return dot3D(v1, v2) / mag3D(v1) / mag3D(v2)
+
+
+#def planar_angle(v1, v2, normal=(0,0,1)):
+#    """returns the angle of one vector relative to the other in the 
+#    plane defined by the normal (default is in the XY plane)
+#    NB This algorithm avoids carrying out a coordinate transformation 
+#    of both vectors. However, it only works if both vectors are in that 
+#    plane to start with. """
+#    return atan2(dot3D(normal, sin3D(v1, v2, False)), cos_sim3D(v1, v2))
 
 
 def rotQ(self, ang, other):
@@ -152,6 +197,10 @@ def fmt_3x3(dc, fmt='7.4f'):
     #return ', '.join([f'({x:6.3f}, {y:6.3f}, {z:6.3f})' for x, y, z in dc])
     return ', '.join([f'({x:{fmt}}, {y:{fmt}}, {z:{fmt}})' for x, y, z in dc])
 
+
+# ===========================
+# ========== n D ============
+# ===========================
 
 def magND(v):
     return sum(vv*2 for vv in v) ** 0.5
