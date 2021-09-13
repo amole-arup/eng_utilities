@@ -55,6 +55,9 @@ coverage.xml
 *.mo
 *.pot
 
+# Python stuff:
+*.pkl
+
 # Django stuff:
 *.log
 local_settings.py
@@ -127,3 +130,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+.fake
+.ionide
+notebooks/section_dict.pkl

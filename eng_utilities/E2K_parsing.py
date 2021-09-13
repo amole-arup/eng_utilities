@@ -142,6 +142,41 @@ def load_parser(d):
     return [ldict]
 
 
+def combo_func(the_dict, line):  
+    line_key = line[0][0]
+    combo_name = line[0][1]
+    data_type = line[1][0] # e.g. 'LOAD', 'SPEC', 'COMBO'
+    line_dict = dict(line[1:])
+    
+    # if the line key is not already in the dictionary, add it
+    if not the_dict.get(line_key):
+        the_dict[line_key] = dict() # the_dict['COMBO']
+        #print(f'...adding {line_key} to COMBO_dict')
+    
+    # make the line key the current reference
+    a_dict = the_dict[line_key] # a_dict is the_dict['COMBO']
+    
+    # if the combination is not already in the dictionary, add it
+    if not a_dict.get(combo_name):
+        a_dict[combo_name] = dict()
+        #print(f'...adding {combo_name} to {line_key} to COMBO_dict')
+    
+    # make the combination name the current reference
+    b_dict = a_dict[combo_name] # b_dict is the_dict['COMBO']['COMBO1']
+    
+    # if the combination name is not already in the dictionary, add it
+    if data_type == 'TYPE': # add type to the combination dictionary
+        b_dict['TYPE'] = line_dict['TYPE']
+    else: # add the different load cases with their load factor for each datatype
+        #c_dict.get(data_type, []) + list(tuple([line_dict[data_type], line_dict['SF']]))
+        if not b_dict.get(data_type): # if there is no datatype 'SPEC'
+            b_dict[data_type] = [tuple([line_dict[data_type], line_dict['SF']])]
+        else:  # add the new data to the existing
+            the_list = b_dict[data_type]
+            the_list.append(tuple([line_dict[data_type], line_dict['SF']]))
+            b_dict[data_type] = the_list
+
+
 ## NOTE: `Force Line` refers to a specific polyline
 ## format that is intended to represent properties
 ## along a line as a 2D shape anchored on a baseline
@@ -261,7 +296,7 @@ def E2KtoDict(E2K_model_path, **kwargs):
 
             elif line.startswith(r'$ LOG'):
                 ignore_lines = True # stops import of log lines
-                key = line[2:].strip() # remove ` $`
+                key = line[2:].strip() # removes ` $`
                 E2K_dict[key] = dict()
                 # Point `the_dict` to the relevant entry in E2K_dict
                 the_dict = E2K_dict[key] 
@@ -269,8 +304,8 @@ def E2KtoDict(E2K_model_path, **kwargs):
                 the_func = try_branch
 
             #elif line.startswith(r'$ POINT COORDINATES'):
-            #    ignore_lines = True
-            #    key = line[2:].strip()
+            #    ignore_lines = False
+            #    key = line[2:].strip() # removes `$ `
             #    E2K_dict[key] = dict()
             #    the_dict = E2K_dict[key]
             #    the_func = point_parse
@@ -280,10 +315,17 @@ def E2KtoDict(E2K_model_path, **kwargs):
                     line.startswith(r'$ SHELL OBJECT LOADS')):
                 print(f'Starting to process {line.strip()}')
                 ignore_lines = False
-                key = line[2:].strip()
+                key = line[2:].strip() # removes `$ `
                 E2K_dict[key] = dict()
                 the_dict = E2K_dict[key]
                 the_func = load_func
+            
+            elif line.startswith(r'$ LOAD COMBINATIONS'):
+                ignore_lines = False
+                key = line[2:].strip()
+                E2K_dict[key] = dict()
+                the_dict = E2K_dict[key]
+                the_func = combo_func
             
             # Default parsing set up
             elif line.startswith(r'$'):
