@@ -4,8 +4,9 @@ from os import listdir
 from os.path import exists, isfile, join, basename, splitext
 import xmltodict
 import pickle
-from general_utilities import try_numeric, units_conv_dict, units_lookup_dict 
-from geometry_utilities import *
+
+from eng_utilities.general_utilities import try_numeric, units_conv_dict, units_lookup_dict 
+from eng_utilities.geometry_utilities import *
 
 
 prop_dims_dict = {
@@ -46,7 +47,7 @@ def convert_prop_units(shape_dict, model_length_units='m'):
 ## === Section Properties ===
 ## ==========================
 
-def section_file_parser(root_dir, file_list = [], flatten=False):
+def section_file_parser(root_dir, file_list = [], flatten=False, flat=False):
     """
     
     root_dir = r'C:\Program Files\Computers and Structures\ETABS 17'
@@ -63,7 +64,7 @@ def section_file_parser(root_dir, file_list = [], flatten=False):
     sec_d4 = dict()
     for j, xml_file in enumerate(xml_list):
         #xml_file = 'AISC14.xml'
-        print(f'{j}: {xml_file}')
+        #print(f'{j}: {xml_file}')
         
         filename = basename(xml_file).replace('.xml','') if flatten else xml_file.replace('.xml','')
         with open(join(root_dir, xml_file), 'rb') as f:
@@ -86,7 +87,7 @@ def section_file_parser(root_dir, file_list = [], flatten=False):
 
         sec_d2 = dict()
         for k2, v2 in sec_gen:
-            print(f'key k2: {k2}, v2 type: {type(v2)}')
+            #print(f'key k2: {k2}, v2 type: {type(v2)}')
             #sec_d1 = dict()
             if isinstance(v2, dict):
                 v2 = [v2] # Convert single cases to list of one case
@@ -101,15 +102,19 @@ def section_file_parser(root_dir, file_list = [], flatten=False):
                     sec_d2[sec_d0['EDI_STD']] = sec_d0
             #sec_d2[k2] = sec_d1
 
-        filename
-        sec_d3 = {'FILENAME': filename, 
-                  'CONTROL': data['PROPERTY_FILE']['CONTROL'],
-                  'SECTIONS': sec_d2}
-        sec_d4[filename] = sec_d3
+        #filename
+        if flat: # creates a flat dictionary - needs testing
+            sec_d4.update({(filename, k):v for k, v in sec_d2.items() 
+                if ((v.get('DESIGNATION') != 'RB') and (v.get('DESIGNATION')) )})
+        else:
+            sec_d3 = {'FILENAME': filename, 
+                    'CONTROL': data['PROPERTY_FILE']['CONTROL'],
+                    'SECTIONS': sec_d2}
+            sec_d4[filename] = sec_d3
     return sec_d4
 
 
-def build_section_dict(root_dir=None):
+def build_section_dict(root_dir=None, flat = False):
     """"""
     if not root_dir:
         root_dir = r'C:\Program Files\Computers and Structures\ETABS 17'
@@ -117,6 +122,7 @@ def build_section_dict(root_dir=None):
     # This checks for a pickled section file
     if isfile('section_dict.pkl') and True: # Switch to False to re-import
         section_def_dict = pickle.load(open('section_dict.pkl', 'rb'))
+        
     else:
         root_dir = r'C:\Program Files\Computers and Structures\ETABS 17'
         dir1 = 'Property Libraries Old'
@@ -128,9 +134,10 @@ def build_section_dict(root_dir=None):
         xml_list = [join(dir1, file) for file in xml_list1] + \
                 [join(dir2, file) for file in xml_list2]
         # Process section data
-        section_def_dict = section_file_parser(root_dir, xml_list, True)
+        section_def_dict = section_file_parser(root_dir, xml_list, flatten=True, flat=flat)
         # Do pickle dump for future access
         pickle.dump(section_def_dict, open('section_dict.pkl', 'wb'))
+        
     return section_def_dict
 
 
