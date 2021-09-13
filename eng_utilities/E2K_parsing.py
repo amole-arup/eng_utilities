@@ -1,13 +1,13 @@
 """"""
 
-from eng_utilities.general_utilities import is_numeric, try_numeric
-from geometry_utilities import *
-from section_utilities import build_section_dict
-import pickle
 #from os import listdir
 from os.path import exists, isfile, join, basename, splitext
-from general_utilities import is_numeric, try_numeric
-from E2K_postprocessing import *
+import pickle
+
+from eng_utilities.general_utilities import is_numeric, try_numeric
+from eng_utilities.geometry_utilities import *
+from eng_utilities.section_utilities import build_section_dict
+from eng_utilities.E2K_postprocessing import *
 from collections import namedtuple
 
 LoadKey = namedtuple('LoadKey', 'MEMBER STORY LOADCASE')
@@ -287,6 +287,7 @@ def E2KtoDict(E2K_model_path, **kwargs):
             
             # Default parsing set up
             elif line.startswith(r'$'):
+                print(f'Starting to process {line.strip()}')
                 ignore_lines = False
                 key = line[2:].strip()
                 E2K_dict[key] = dict()
@@ -306,7 +307,12 @@ def E2KtoDict(E2K_model_path, **kwargs):
                     the_func(the_dict, dc)  # the active dictionary is modified
     
     if debug:
-        print(E2K_dict.keys())
+        for k,v in E2K_dict.items():
+            print(k)
+            if len(v) < 6:
+                [print(f'{len(vv):7d}  : {kk}') for kk, vv in v.items()]
+            else:
+                print(f'{len(v):7d}  : {k}')
     return E2K_dict
 
 
@@ -335,6 +341,16 @@ def E2KtoDict_test(text):
         #    the_dict = E2K_dict[key]
         #    the_func = point_parse
 
+        elif (line.startswith(r'$ POINT OBJECT LOADS') or 
+                line.startswith(r'$ FRAME OBJECT LOADS') or 
+                line.startswith(r'$ SHELL OBJECT LOADS')):
+            print(f'Starting to process {line.strip()}')
+            ignore_lines = False
+            key = line[2:].strip()
+            E2K_dict[key] = dict()
+            the_dict = E2K_dict[key]
+            the_func = load_func
+            
         elif line.startswith(r'$'):
             ignore_lines = False
             key = line[2:].strip()
@@ -384,18 +400,33 @@ def process_E2K_dict(E2K_dict):
     # GROUPS  # TODO
     
 
-def run_all(E2K_model_path):
+def run_all(E2K_model_path, renew=False, **kwargs):
     """"""
+    debug = kwargs.get('Debug', False)
+    
     pickle_path = splitext(E2K_model_path)[0] + '.pkl'
     
-    if exists(pickle_path) and True:
+    if exists(pickle_path) and (not renew):
         E2K_dict = pickle.load(open(pickle_path, 'rb'))
     else:
-        E2K_dict = E2KtoDict(E2K_model_path)
+        E2K_dict = E2KtoDict(E2K_model_path, **kwargs)
         pickle.dump(E2K_dict, open(pickle_path, 'wb'))
     
     process_E2K_dict(E2K_dict)
     
+    if debug:
+        for k,v in E2K_dict.items():
+            print(k)
+            if isinstance(v, dict):
+                if len(v) < 6:
+                    [print(f'{len(vv):7d}  : {kk}') for kk, vv in v.items()]
+                else:
+                    print(f'{len(v):7d}  : {k}')
+            elif isinstance(v, list):
+                print(f'{len(v):7d}  : {k}')
+            else:
+                print(f'{k}  : {v}')
+
     return E2K_dict
     
 
