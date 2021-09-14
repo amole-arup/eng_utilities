@@ -261,18 +261,24 @@ def CHS_props(D, T):
         return  {'P': pi*D, 'A': A, 'Avy': 0.6*A, 'Avz': 0.6*A, 'Iyy': I, 'Izz': I}
 
 
-def I_props(D, B, TF, TW):
+def I_props(D, B, TF, TW, ETABS=True):
     """Properties of an I-section
     >>> I_props(12, 15, 3, 2)
     {'P': 74, 'A': 90, 'Avy': 72, 'Avz': 30, 'Iyy': 2767.5, 'Izz': 858.0}
     """
     A = B*D - (B-TW)*(D-2*TF)
     Iyy = B*D**3/12 - (B-TW)*(D-2*TF)**3/12
-    Izz = TF*B**3/6 - (D-2*TF)*TW**3/12
-    if True:
-        return {'P':2*D+4*B-2*TW ,'A': A, 'AS3': 2*TF*B, 'AS2': TW*D, 'I33': Iyy, 'I22': Izz}
+    Zyy = 2 * Iyy / D
+    Syy = B * TW * (D - TF) + 0.5 * TW * (D - 2 * TF)**2
+    Izz = TF*B**3/6 - (D - 2*TF) * TW**3 / 12
+    Zzz = 2 * Izz / B
+    Szz = 0.5 * TF * B**2 + 0.25 * (D - 2*TF) * TW**2
+    if ETABS:
+        return {'P':2*D+4*B-2*TW ,'A': A, 'AS3': 5/3*TF*B, 'AS2': TW*(D-TF), 'I33': Iyy, 'I22': Izz,
+        'S33': Zyy, 'S22': Zzz, 'Z33': Syy, 'Z22': Szz}
     else:
-        return {'P':2*D+4*B-2*TW ,'A': A, 'Avy': 2*TF*B, 'Avz': TW*D, 'Iyy': Iyy, 'Izz': Izz}
+        return {'P':2*D+4*B-2*TW ,'A': A, 'Avy': 2*TF*B, 'Avz': TW*D, 'Iyy': Iyy, 'Izz': Izz,
+        'Zyy': Zyy, 'Zzz': Zzz, 'Syy': Syy, 'Szz': Szz}
 
 
 def CH_props(D, B, TF, TW):
