@@ -1,7 +1,8 @@
 """"""
 
 from math import pi, sin, cos, tan, atan, atan2, asin, acos, exp, log, log10
-
+from functools import reduce
+from operator import mul
 
 def rad_to_deg(ang):
     """Converts radians to degrees"""
@@ -331,7 +332,7 @@ def kron():
 
 
 def main():
-    import numpy as np
+    #import numpy as np
     print("Hello World!")
     A = [[1, 2], [4, -2]]
     B = [[4, -1], [-3, 5]]
@@ -361,12 +362,12 @@ def main():
     print('inv(A)', Minv(A))
     print('inv(D)', Minv(D))
     
-    print('det(A)', np.linalg.det(np.array(A)))
-    print('det(B)', np.linalg.det(np.array(B)))
-    print('det(C)', np.linalg.det(np.array(C)))
-    print('det(D)', np.linalg.det(np.array(D)))
-    print('inv(A)', np.linalg.inv(np.array(A)))
-    print('inv(D)', np.linalg.inv(np.array(D)))
+    #print('det(A)', np.linalg.det(np.array(A)))
+    #print('det(B)', np.linalg.det(np.array(B)))
+    #print('det(C)', np.linalg.det(np.array(C)))
+    #print('det(D)', np.linalg.det(np.array(D)))
+    #print('inv(A)', np.linalg.inv(np.array(A)))
+    #print('inv(D)', np.linalg.inv(np.array(D)))
     
 
 if __name__ == "__main__":
