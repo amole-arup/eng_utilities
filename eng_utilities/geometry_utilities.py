@@ -231,6 +231,10 @@ def Madd(M1, M2):
     return [[a+b for a, b in zip(c, d)] for c, d in zip(M1, M2)]
 
 
+def Msub(M1, M2):
+    return [[a-b for a, b in zip(c, d)] for c, d in zip(M1, M2)]
+
+
 def Mtranspose(M):
     return list(zip(*M))
 
@@ -244,16 +248,17 @@ def MI(n):
 
 
 def Minv(M):
-    """Check that diagonals are not zero..."""
+    """Returns the inverse of a square matrix
+    Raises a ValueError if matrix is non-square or singular"""
     n = len(M)
     if sum(len(M)!=n for m in M):
         raise ValueError('Matrix is not square.')
     
-    Mm = M.copy()
+    Mm = M.copy() # otherwise original will be modified
     Im = MI(n)
-    k=1
     
     for i in range(n):
+        k = 1
         s = Mm[i][i]
         while s==0 and i+k < n:
             Mm[i] = addND(Mm[i], Mm[i+k])
@@ -261,7 +266,11 @@ def Minv(M):
             k+=1
             s = Mm[i][i]
         if s == 0:
-            raise ValueError('Singular Matrix')
+            err_msg = 'Singular Matrix\n' 
+            err_msg += f'Processing row {i+1} of {n}:\n' 
+            err_msg +=  repr(M)
+            raise ValueError(err_msg)
+        
         Mm[i] = scaleND(Mm[i], 1 / s)
         Im[i] = scaleND(Im[i], 1 / s)
         for j in range(n):
@@ -270,3 +279,95 @@ def Minv(M):
                 Mm[j] = subND(Mm[j], scaleND(Mm[i], s))
                 Im[j] = subND(Im[j], scaleND(Im[i], s))
     return Im #, Mm
+
+
+def Mdet(matrix):
+    """Returns the determinant of a square matrix
+    
+    Determinant is calculated by Gaussian elimination method
+    A ValueError is raised if matrix is non-square or singular
+    
+    Args:
+        matrix:
+    
+    """
+    n = len(matrix)
+    if sum(len(matrix)!=n for m in matrix):
+        raise ValueError('Matrix is not square.')
+    
+    M = matrix.copy() # otherwise original will be modified
+
+    det_sign = 1
+    
+    for i in range(n):
+        k=1        
+        s = M[i][i]
+        # Switch rows if diagonal is zero
+        while s==0 and i+k < n:
+            M[i], M[i+k] = M[i+k], M[i]
+            det_sign *= -1
+            k+=1
+            s = M[i][i]
+        if s == 0:
+            err_msg = 'Singular Matrix\n' 
+            err_msg += f'Processing row {i+1} of {n}:\n' 
+            err_msg +=  repr(M)
+            raise ValueError(err_msg)
+        
+        # eliminate value in i-th column in remainimg rows
+        for j in range(i+1, n):
+            if M[j][i] != 0:
+                s = M[j][i] / M[i][i]
+                M[j] = subND(M[j], scaleND(M[i], s))
+    
+    #print(M)
+    return det_sign * reduce(mul, [M[i][i] for i in range(n)], 1)
+
+
+def kron():
+    """
+    Kronecker product"""
+    pass
+
+
+def main():
+    import numpy as np
+    print("Hello World!")
+    A = [[1, 2], [4, -2]]
+    B = [[4, -1], [-3, 5]]
+    C = [[0, 3], [1, 5]]
+    print('A', A)
+    print('B', B)
+    print('C', C)
+    print('A+B', Madd(A,B))
+    print('A*B', Mmult(A,B))
+    print('det(A)', Mdet(A))
+    
+    A = [[1, 3, 2], [4, -1, 2], [2, 4, -1]]
+    B = [[1, 3, 2], [4, -1, 2], [-3, 1, 5]]
+    C = [[0, 3, 2], [0, 0, 2], [-3, 1, 5]]
+    D = [[0, 0, 2], [0, 3, 0], [-5, 0, 0]]
+    A[0], A[1] = A[1], A[0]
+    print('A', A)
+    print('B', B)
+    print('C', C)
+    print('A+B', Madd(A,B))
+    print('A*B', Mmult(A,B))
+    print('det(A)', Mdet(A))
+    print('det(B)', Mdet(B))
+    print('det(C)', Mdet(C))
+    print('det(D)', Mdet(D))
+    #print('C', C)
+    print('inv(A)', Minv(A))
+    print('inv(D)', Minv(D))
+    
+    print('det(A)', np.linalg.det(np.array(A)))
+    print('det(B)', np.linalg.det(np.array(B)))
+    print('det(C)', np.linalg.det(np.array(C)))
+    print('det(D)', np.linalg.det(np.array(D)))
+    print('inv(A)', np.linalg.inv(np.array(A)))
+    print('inv(D)', np.linalg.inv(np.array(D)))
+    
+
+if __name__ == "__main__":
+    main()
