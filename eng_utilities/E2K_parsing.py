@@ -102,9 +102,9 @@ def try_merge(a_dict, data_coll):
 
 
 def load_func(the_dict, line): # a_dict is 
+    loadclass = line[0][0]
+    member, story = line[0][1]
     line_dict = dict(line)
-    loadclass = list(line_dict.keys())[0]
-    member, story = line_dict.get(loadclass)
     key = tuple([member, story, line_dict.get('LC')])
     
     if not the_dict.get(loadclass):
@@ -304,6 +304,7 @@ def E2KtoDict(E2K_model_path, **kwargs):
                 the_func = try_branch
 
             #elif line.startswith(r'$ POINT COORDINATES'):
+            # print(f'Starting to process {line.strip()} *')
             #    ignore_lines = False
             #    key = line[2:].strip() # removes `$ `
             #    E2K_dict[key] = dict()
@@ -312,8 +313,10 @@ def E2KtoDict(E2K_model_path, **kwargs):
             
             elif (line.startswith(r'$ POINT OBJECT LOADS') or 
                     line.startswith(r'$ FRAME OBJECT LOADS') or 
-                    line.startswith(r'$ SHELL OBJECT LOADS')):
-                print(f'Starting to process {line.strip()}')
+                    line.startswith(r'$ LINE OBJECT LOADS') or 
+                    line.startswith(r'$ SHELL OBJECT LOADS') or
+                    line.startswith(r'$ AREA OBJECT LOADS')):
+                print(f'Starting to process {line.strip()} *')
                 ignore_lines = False
                 key = line[2:].strip() # removes `$ `
                 E2K_dict[key] = dict()
@@ -321,6 +324,7 @@ def E2KtoDict(E2K_model_path, **kwargs):
                 the_func = load_func
             
             elif line.startswith(r'$ LOAD COMBINATIONS'):
+                print(f'Starting to process {line.strip()} *')
                 ignore_lines = False
                 key = line[2:].strip()
                 E2K_dict[key] = dict()
