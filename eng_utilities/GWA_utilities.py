@@ -330,7 +330,10 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
     stress_units = set_GSA_pressure_units(units.force, units.length)
     mass_factor = force_factor / length_factor
     mass_units = set_GSA_mass_units(units.force, units.length)
-    
+    #print('F units:', units.force, force_factor, ', L units:', units.length, length_factor)
+    #print('S units:', stress_units, stress_factor, ', M units:', mass_units, mass_factor)
+    #print('T units:', "\xb0" + units.temperature, 1.0, '\n')
+
     MAT_PROPS_dict, FRAME_PROPS_dict, SHELL_PROPS_dict, SPRING_PROPS_dict = [
         E2K_dict.get(k1,{}).get(k2,{}) for k1, k2 in (
         ('MATERIAL PROPERTIES', 'MATERIAL'), 
@@ -349,8 +352,33 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
     
     GROUPS_dict = E2K_dict.get('GROUPS',{}).get('GROUP',{})
     
+    if E2K_dict.get('LOAD PATTERNS'): # New ETABS after version 9.7
+        LOADCASE_dict, WIND_dict, SEISMIC_dict, POINT_LOAD_dict, LINE_LOAD_dict, AREA_LOAD_dict = \
+            [E2K_dict.get(k1,{}).get(k2,{}) for k1, k2 in (
+            ('LOAD PATTERNS', 'LOADPATTERN'), 
+            ('LOAD PATTERNS', 'WIND'),
+            ('LOAD PATTERNS', 'SEISMIC'),
+            ('POINT OBJECT LOADS', 'POINTLOAD'),
+            ('FRAME OBJECT LOADS', 'LINELOAD'),
+            ('SHELL OBJECT LOADS', 'AREALOAD')
+        )]
+    else:
+        LOADCASE_dict, WIND_dict, SEISMIC_dict, POINT_LOAD_dict, LINE_LOAD_dict, AREA_LOAD_dict = \
+            [E2K_dict.get(k1,{}).get(k2,{}) for k1, k2 in (
+            ('STATIC LOADS', 'LOADCASE'), 
+            ('STATIC LOADS', 'WIND'),
+            ('STATIC LOADS', 'SEISMIC'),
+            ('POINT OBJECT LOADS', 'POINTLOAD'),
+            ('LINE OBJECT LOADS', 'LINELOAD'),
+            ('AREA OBJECT LOADS', 'AREALOAD')
+    )]
+
+    LOAD_COMBO_dict = E2K_dict.get('LOAD COMBINATIONS',{}).get('COMBO',{})
+
+    
     with open(GWApath, 'w') as gwa:
         # ** Writing initial lines to GWA **
+        # NB "\xb0", "\xb2", "\xb3" are degree sign, squared and cubed symbols
         gwa.write(r'!" This file was originally written by a Python script by the E2KtoJSON_code library"' + '\n')
         gwa.write(r'!' + '\n')
         gwa.write(r'! Notes:' + '\n')
@@ -369,9 +397,14 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
                              str(length_factor)]) + '\n')
         gwa.write('\t'.join(['UNIT_DATA.1', 'STRESS', stress_units, 
                              str(stress_factor)]) + '\n') 
+        # UNIT_DATA.1	TEMP	¢XÆC	1
+        # Note that GSA uses a degree symbol that is missing at present...
+        gwa.write('\t'.join(['UNIT_DATA.1', 'TEMP', "\xb0" + units.temperature, 
+                             '1']) + '\n') 
         gwa.write('\t'.join(['UNIT_DATA.1', 'MASS', mass_units, 
                              str(mass_factor)]) + '\n') 
-        #gwa.write('\t'.join(['UNIT_DATA.1', 'MASS', 't', '0.001']))
+        gwa.write('\t'.join(['UNIT_DATA.1', 'ACCEL', units.length + r'/s' + "\xb2", 
+                            str(length_factor)]) + '\n')
         gwa.write('\t'.join(['UNIT_DATA.1', 'TIME', 's', '1']) + '\n')
         
         
@@ -624,7 +657,7 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
         
         # ** Writing Groups / Lists to GWA **
         # NB ETABS can have mixed groups, but GSA separates them by object type - e.g. beam lists, node lists etc 
-        ['POINT' 'LINE' 'AREA']
+        # ['POINT' 'LINE' 'AREA']
         list_id = 1
         if GROUPS_dict: # in case there are no Groups in the file
             for g_name, g_data in GROUPS_dict.items():
@@ -658,6 +691,78 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
                     gwa.write(' '.join([str(n) for n in el_list]))
                     gwa.write('\n')
                     list_id += 1
+
+        # ========================
+        # =====  Load Cases  =====
+        # ========================
+        
+        # ** Writing Load Cases to GWA **
+        # LOAD_TITLE.1 | case | title | type.1 | bridge
+
+        # LOAD_GRAVITY.3 | name | elemlist | nodelist | case | x | y | z
+        # LOADCASE_dict, WIND_dict, SEISMIC_dict
+        
+        load_type_dict = {
+            'DEAD': 'DEAD',
+            'SUPERDEAD': 'DEAD',
+            'LIVE': 'IMPOSED',
+            'WIND': 'WIND',
+            'QUAKE': 'SEISMIC',
+            'Dead': 'DEAD',
+            'Live': 'IMPOSED',
+            'Wind': 'WIND',
+            'Seismic': 'SEISMIC',
+        }
+
+        for lc_name, lc_dict in LOADCASE_dict.items():
+            lc_ID = lc_dict.get('ID', 0)
+            lc_type = lc_dict.get('TYPE', '')
+            ostr = [str(val) for val in ['LOAD_TITLE.1', lc_ID, lc_name, 
+                                        load_type_dict.get(lc_type, 'UNDEF'),'']]
+            gwa.write('\t'.join(ostr) + '\n')
+            if lc_dict.get('SELFWEIGHT', None):
+                gravity_factor = -1 * lc_dict.get('SELFWEIGHT', 0)
+                ostr = [str(val) for val in ['LOAD_GRAVITY.3', '', 'all', 'all', lc_ID, 
+                                            0, 0, gravity_factor]]
+                gwa.write('\t'.join(ostr) + '\n')        
+        
+
+        # =========================
+        # =====  Beams Loads  =====
+        # =========================
+        
+        # LOAD_BEAM_UDL.2 | name | list | case | axis | proj | dir | value
+        # LOAD_BEAM_UDL.2	Uniform Load	286 287 295 296	2	GLOBAL	NO	Z	-5000
+        # pos is negative if relative distance
+        # LOAD_BEAM_PATCH.2 | name | list | case | axis | proj | dir | pos_1 | value_1 | pos_2 | value_2
+
+        LC_ID_lookup_dict = {v['ID']: k for k, v in LOADCASE_dict.items()}
+        print(LC_ID_lookup_dict)
+        print(LOADCASE_dict)
+
+        print('len of LINE_LOAD_dict', len(LINE_LOAD_dict))
+        for load_key, load_list in LINE_LOAD_dict.items():
+            member, story, lc = load_key
+            el_ID = LINE_dict.get((member, story),{}).get('ID')
+            lc_ID = LOADCASE_dict.get(lc,{}).get('ID')
+            #LC_ID_lookup_dict[lc] # reverse lookup not required
+            if el_ID:
+                for load_dict in load_list:
+                    f_dir = {'GRAV': ('GLOBAL', 'Z', -1)}.get(load_dict.get('DIR'), None)
+                    if f_dir and load_dict.get('TYPE') == 'UNIFF':
+                        load_value = load_dict.get('DATA')[0][1]
+                        ostr = [str(val) for val in ['LOAD_BEAM_UDL.2', '', el_ID, lc_ID, 
+                                f_dir[0], 'NO', f_dir[1], f_dir[2] * load_value]]
+                        gwa.write('\t'.join(ostr) + '\n') 
+                        #pass
+                    elif f_dir and load_dict.get('TYPE') == 'TRAPF':
+                        (pos_1, value_1), (pos_2, value_2) = load_dict.get('DATA')
+                        value_2
+                        ostr = [str(val) for val in ['LOAD_BEAM_PATCH.2', '', el_ID, lc_ID, f_dir[0], 
+                                'NO', f_dir[1], -1 * pos_1, f_dir[2] * value_1, -1 * pos_2, f_dir[2] * value_2]]
+                        gwa.write('\t'.join(ostr) + '\n') 
+                        #pass
+            #pass
 
         gwa.write('END\n')
 
