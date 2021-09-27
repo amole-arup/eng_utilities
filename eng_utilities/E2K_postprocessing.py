@@ -784,7 +784,7 @@ def AREA_CONN_PP(E2K_dict):
 
 
 def AREA_ASSIGNS_PP(E2K_dict):
-    """'LINE ASSIGNS': Postprocesses E2K_dict to add
+    """'AREA ASSIGNS': Postprocesses E2K_dict to add
     coordinates, thicknesses, areas, volumes and weights 
     to every line assignment.
     
@@ -926,6 +926,30 @@ def AREA_ASSIGNS_PP(E2K_dict):
         print(f'Number of errors: {len(my_log)}')
         print(f'Number of shells: {len(SHELLS_dict)}\n')
         print(my_log)
+
+
+def LOAD_CASES_PP(E2K_dict):
+    """'LOADCASE' or 'LOADPATTERN' : Postprocesses E2K_dict to 
+    add a load case / load pattern integer ID 
+    to every load case / load pattern definition.
+    """
+    #my_log = []
+    
+
+    ## == main processes == ##
+    
+    STATIC_LOAD_dict = E2K_dict.get('STATIC LOADS',{}).get('LOADCASE',{})
+    LOAD_PATTERNS_dict = E2K_dict.get('LOAD PATTERNS',{}).get('LOADPATTERN',{})
+
+    if STATIC_LOAD_dict:
+        the_dict = STATIC_LOAD_dict
+    else:
+        the_dict = LOAD_PATTERNS_dict
+    
+    for i, lc_dict in enumerate(the_dict.values()):
+        lc_dict['ID'] = i + 1
+        # return
+
 
 
 ## =============================
