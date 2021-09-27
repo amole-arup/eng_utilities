@@ -97,6 +97,28 @@ def planar_angle2D(v1, v2):
 # ========== 3 D ============
 # ===========================
 
+def cart2cyl(vec3D):
+    x, y, z = vec3D
+    r = (x**2 + y**2)**0.5
+    return r, atan2(y, x), z
+
+
+def cyl2cart(vec3D):
+    r, theta, z = vec3D
+    return r * cos(theta), r * sin(theta), z
+
+
+def angfix(ang):
+    """Keeps an angle in radians within -pi > angle > pi"""
+    return ((ang + pi) % (2*pi)) - pi
+
+
+def cyl_rot3D(v, ang):
+    """Rotates 3D cylindrical coordinates (v) by an angle (ang) in radians"""
+    r, theta, z = v
+    return r, angfix(theta + ang), z
+
+
 def dist3D(pt1, pt2):
     """Returns distance between two 3D points (as two 3-tuples)"""
     return ((pt2[0]-pt1[0])**2 + (pt2[1]-pt1[1])**2 + (pt2[2]-pt1[2])**2)**0.5
