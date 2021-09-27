@@ -441,6 +441,8 @@ def process_E2K_dict(E2K_dict):
     LINE_ASSIGNS_PP(E2K_dict)
     AREA_CONN_PP(E2K_dict)
     AREA_ASSIGNS_PP(E2K_dict)
+    LOAD_CASES_PP(E2K_dict) # post processing STATIC LOADS or LOAD PATTERNS
+    #LINE_LOAD_PP(E2K_dict)
     MEMBER_quantities_summary(E2K_dict)
     # LOADS   # TODO
     # GROUPS  # TODO
