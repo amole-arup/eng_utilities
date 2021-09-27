@@ -1,4 +1,12 @@
-""""""
+"""Code for extracting geometry data from ETABS text files (*.E2K & *.$ET).
+
+Functions exist for pushing the data out to a GSA text file.
+
+TODO:
+- diaphragm constraint
+- calculate floor are for frame without slabs
+- set up analyses and combinations
+"""
 
 #from os import listdir
 from os.path import exists, isfile, join, basename, splitext
@@ -14,7 +22,7 @@ LoadKey = namedtuple('LoadKey', 'MEMBER STORY LOADCASE')
 
 
 def is_key(string):
-    """
+    """Checking whether element functions as a 'key' in the file
     
     >>> [is_key(x) for x in ['RELEASE', '"PINNED"', 'CARDINALPT', '8', 8, 8.8, '"32"']]
     [True, False, True, False, False, False, False]
@@ -424,6 +432,8 @@ def E2KtoDict_test(text):
 ## ================================
 
 def process_E2K_dict(E2K_dict):
+    """Carries out all the post-processing of the parsed E2K file
+    Most importantly, this adds quantities in a new dictionary"""
     FILE_PP(E2K_dict)
     PROGRAM_PP(E2K_dict)
     CONTROLS_PP(E2K_dict)
@@ -448,13 +458,16 @@ def process_E2K_dict(E2K_dict):
     # GROUPS  # TODO
     
 
-def run_all(E2K_model_path, renew=False, **kwargs):
-    """"""
+def run_all(E2K_model_path, get_pickle=False, **kwargs):
+    """Runs all functions for parsing and post-processing an ETABS text file
+    It returns a dictionary that is in the format of the text file.
+    Since processing can be time-consuming, it pickles the output 
+    and will preferentially unpickle if 'get_pickle' is True"""
     debug = kwargs.get('Debug', False)
     
     pickle_path = splitext(E2K_model_path)[0] + '.pkl'
     
-    if exists(pickle_path) and (not renew):
+    if exists(pickle_path) and get_pickle == True:
         E2K_dict = pickle.load(open(pickle_path, 'rb'))
     else:
         E2K_dict = E2KtoDict(E2K_model_path, **kwargs)
