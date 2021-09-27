@@ -71,7 +71,7 @@ Units = namedtuple('Units', 'force length temperature')
 # Standard Unit Definitions
 
 units_tuple = ('m', 'cm', 'mm', 'in', 'ft', 'yd', 
-    'kN', 'MN', 'GN', 'kip', 'lb', 'kipf', 'kipm', 'lbf', 'lbm',
+    'N', 'kN', 'MN', 'GN', 'kip', 'lb', 'kipf', 'kipm', 'lbf', 'lbm',
     'C', 'K', 'F', 'R', 'g', 'kg', 'ton', 'tonne', )
 
 
@@ -82,7 +82,9 @@ units_conv_dict = {
     ('yd', 'm'): 0.9144, ('yd', 'cm'): 91.44, ('yd', 'mm'): 914.4, ('yd', 'ft'): 3.0, ('yd', 'in'): 36.0, 
     ('N', 'MN'): 1e-06, ('N', 'kN'): 0.001, ('kN', 'MN'): 0.001, ('MN', 'MN'): 1.0, 
     ('lb', 'MN'): 4.4482216e-06, ('lb', 'kN'): 4.4482216e-03, ('lb', 'N'): 4.4482216, 
+    ('lbf', 'MN'): 4.4482216e-06, ('lbf', 'kN'): 4.4482216e-03, ('lbf', 'N'): 4.4482216, 
     ('kip', 'MN'): 0.0044482216, ('kip', 'kN'): 4.4482216, ('kip', 'N'): 4448.2216, 
+    ('kipf', 'MN'): 0.0044482216, ('kipf', 'kN'): 4.4482216, ('kipf', 'N'): 4448.2216, 
     ('kg', 'mt'): 1e-06, ('kg', 't'): 0.001, ('t', 'mt'): 0.001, ('mt', 'mt'): 1.0,  
 }
 
