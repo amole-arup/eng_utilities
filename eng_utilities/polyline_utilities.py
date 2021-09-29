@@ -57,7 +57,11 @@ def perim_props(pt_list):
         res[4] += (x1**2.0 + x1*x2 + x2**2.0) * area / 6.0
         res[5] += (x1*y2 + 2.0*x1*y1 + 2.0*x2*y2 + x2*y1) * area / 12.0
         x1, y1 = x2, y2
-    return {'P': p_length, 'A': res[0], 'Cy': res[1]/res[0], 'Cz': res[2]/res[0], 
+    if res[0] == 0:
+        err_msg = 'Polyline has zero area: \n' + str(pt_list)
+        return {'A': 0, 'Error Message' : err_msg}
+    else:
+        return {'P': p_length, 'A': res[0], 'Cy': res[1]/res[0], 'Cz': res[2]/res[0], 
             'Iyy': res[3], 'Izz': res[4], 'Iyz': res[5]}            
 
 
@@ -80,12 +84,20 @@ def perim_full_props(pt_list):
         pt_list.append(pt_list[0])
     
     props = perim_props(pt_list)
-    p_length, area, c_y, c_z, I_yy, I_zz, I_yz = [props[p] for p in 
+    if props['A'] == 0:
+        err_msg = props['Error Message'] + '\n'
+        return {'A': 0, 'Error Message' : err_msg}
+    
+    p_length, area, c_y, c_z, I_yy, I_zz, I_yz = [props.get(p,0) for p in 
                                         ('P', 'A', 'Cy', 'Cz', 'Iyy', 'Izz', 'Iyz')]
     pt_list_c = [[y - c_y, z - c_z] for y, z in pt_list]
     (ymin, zmin),(ymax, zmax) = bounding_box(pt_list_c[:-1])
     props2 = perim_props(pt_list_c)
-    area2, c_y2, c_z2, I_yy2, I_zz2, I_yz2 = [props2[p] for p in 
+    if props2['A'] == 0:
+        err_msg = props2['Error Message'] + '\n' + str(pt_list)
+        return {'A': 0, 'Error Message' : err_msg}
+    
+    area2, c_y2, c_z2, I_yy2, I_zz2, I_yz2 = [props2.get(p,0) for p in 
                                               ('A', 'Cy', 'Cz', 'Iyy', 'Izz', 'Iyz')]
     # c_y2 and c_z2 should be zero
     theta = 0.5 * atan2(-2.0 * I_yz2, I_yy2 - I_zz2)
