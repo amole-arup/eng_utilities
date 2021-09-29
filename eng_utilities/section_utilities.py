@@ -19,7 +19,7 @@ prop_dims_dict = {
 }
 
 
-def convert_prop_units(shape_dict, model_length_units='m'):
+def convert_prop_units(shape_dict, model_length_units):
     """Converts section properties into model units
     
     Note that this will not carry out conversions 
@@ -31,6 +31,9 @@ def convert_prop_units(shape_dict, model_length_units='m'):
             length units `UNITS`, e.g. {'A':2.1, 'UNITS':'m'}
         model_length_units (str): the length units in the model
     """
+    #print('model_length_units (convert_prop_units): \n ', model_length_units)
+    #print('shape_dict (convert_prop_units): \n ', shape_dict)
+    
     if isinstance(shape_dict, dict):
         # Get the units from the shape, default to 'm'
         prop_units = shape_dict.get('UNITS')
@@ -38,7 +41,10 @@ def convert_prop_units(shape_dict, model_length_units='m'):
             prop_conv = units_conv_dict.get((prop_units, model_length_units), None)
             # Carry out conversion if the property name is in the 
             #  property dictionary - prop_dims_dict
-            if prop_conv:
+            if prop_units.casefold() == model_length_units.casefold():
+                return {k:try_numeric(v) \
+                    for k, v in shape_dict.items() if prop_dims_dict.get(k)}
+            elif prop_conv:
                 return {k:(try_numeric(v) * prop_conv**prop_dims_dict[k]) \
                     for k, v in shape_dict.items() if prop_dims_dict.get(k)}
 
