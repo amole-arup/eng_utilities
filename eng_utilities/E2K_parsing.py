@@ -3,9 +3,10 @@
 Functions exist for pushing the data out to a GSA text file.
 
 TODO:
-- diaphragm constraint
-- calculate floor are for frame without slabs
-- set up analyses and combinations
+- add point and area loads (including point loads on beams) (0%)
+- diaphragm constraint (0%)
+- calculate floor are for frame without slabs (60%)
+- set up analyses and combinations (50%)
 """
 
 #from os import listdir
@@ -69,10 +70,10 @@ def try_branch(a_dict, data_coll):
     # pick first pair
     a, b = data_coll[0]
     try_1 = a_dict.get(a)
-    if not try_1:  # if there isn't an entry already
+    if try_1 is None:  # if there isn't an entry already
         #print(f'{a} Not found, add {a}:, {b}: & {data_coll[1:]}')
         a_dict[a] = {b:{k:v for k, v in data_coll[1:]}}
-    elif a_dict[a].get(b):  #  try_merge
+    elif a_dict[a].get(b) is not None:  #  try_merge
         #print(f'{a}  found')
         #print(f'OK : {a_dict[a]}  {b}  -> {a_dict[a].get(b)} therefore, try_merge')
         b_dict = a_dict[a][b]
@@ -94,9 +95,18 @@ def try_merge(a_dict, data_coll):
         return
     ## - Snip end
     for data in data_coll:
-        try_1 = a_dict.get(data[0])
-        if try_1:
-            if try_1 == data[1]: # data is two levels deep
+        try_1 = a_dict.get(data[0], None)
+        if try_1 is not None:
+            # ---
+            if isinstance(try_1, list):
+                try_1.append(data[1])
+            else:
+                try_1 = [try_1] + [data[1]]
+            a_dict[data[0]] = try_1
+            # ---
+            
+            # --- the following has been removed from the corresponding location just above
+            """# if try_1 == data[1]: # data is two levels deep
                 #print('data is two levels deep')
                 pass
             else:
@@ -104,7 +114,9 @@ def try_merge(a_dict, data_coll):
                     try_1.append(data[1])
                 else:
                     try_1 = [try_1] + [data[1]]
-                a_dict[data[0]] = try_1
+                a_dict[data[0]] = try_1"""
+            # ---
+
         else:
             a_dict[data[0]] = data[1]
 
