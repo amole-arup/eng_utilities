@@ -1,4 +1,5 @@
-""""""
+"""
+TO DO: problems with agg prop and SD sections"""
 
 from itertools import accumulate
 from operator import itemgetter
@@ -427,13 +428,22 @@ def SD_SECTIONS_PP(E2K_dict):
         shapes = sd_data.get('SHAPE')
         mat_area_list = []
         if shapes:
-            for shape in shapes.values():
+            for name, shape in shapes.items():
                 # add other options for SHAPETYPES, such as custom embedded sections
                 if shape.get('MATERIAL') and shape.get('SHAPETYPE') == 'POLYGON':
-                    polyline = list(zip(shape['X'], shape['Y']))
-                    poly_props = perim_full_props(polyline)
-                    area = poly_props['A'] # perim_area_centroid(polyline)[0]
-                    perimeter = poly_props['P']
+                    if isinstance(shape['X'], (list, tuple)) and isinstance(shape['Y'], (list, tuple)):
+                        polyline = list(zip(shape['X'], shape['Y']))
+                        poly_props = perim_full_props(polyline)
+                        area = poly_props['A'] # perim_area_centroid(polyline)[0]
+                    else:           # error-catching
+                        area = 0
+                    if area == 0:   # error-catching
+                        err_msg = poly_props.get('Error Message','') + f'\nSDSECTION: {sd_sect}, SHAPE: {name}'
+                        print(err_msg)
+                        continue
+                        #raise ValueError(err_msg)
+                    
+                    perimeter = poly_props.get('P',0)
                     GWA = GWA_GEO(polyline, units=units.length)
                     sd_data.update({'A': area, 'P': perimeter, 'GWA': GWA})
                     
@@ -445,10 +455,19 @@ def SD_SECTIONS_PP(E2K_dict):
                         mat_type = mdict.get('DESIGNTYPE') if (mdict.get('W') and mdict.get('DESIGNTYPE')) else mdict.get('TYPE')
                     mat_area_list.append(Frame_Agg_Props(mat, mat_type.casefold(), unit_weight, area))
                 elif shape.get('SHAPETYPE') == 'POLYGON':  
-                    polyline = list(zip(shape['X'], shape['Y']))
-                    poly_props = perim_full_props(polyline)
-                    area = poly_props['A']
-                    perimeter = poly_props['P']
+                    if isinstance(shape['X'], (list, tuple)) and isinstance(shape['Y'], (list, tuple)):
+                        polyline = list(zip(shape['X'], shape['Y']))
+                        poly_props = perim_full_props(polyline)
+                        area = poly_props['A']
+                    else:            # error-catching
+                        area = 0
+                    if area == 0:    # error-catching
+                        err_msg = poly_props.get('Error Message','') + f'\nSDSECTION: {sd_sect}, SHAPE: {name}'
+                        print(err_msg)
+                        continue
+                        #raise ValueError(err_msg)
+                    
+                    perimeter = poly_props.get('P', 0)
                     GWA = GWA_GEO(polyline, units=units.length)
                     sd_data.update({'A': area, 'P': perimeter, 'GWA': GWA})
                     
@@ -804,7 +823,7 @@ def AREA_ASSIGNS_PP(E2K_dict):
         return
 
     # Area Connectivities
-    AREAS_dict = E2K_dict('AREA CONNECTIVITIES',{}).get('AREA',{})
+    AREAS_dict = E2K_dict.get('AREA CONNECTIVITIES',{}).get('AREA',{})
     
     # Get reference to story elevations
     main_key = 'STORIES - IN SEQUENCE FROM TOP'
@@ -905,14 +924,16 @@ def AREA_ASSIGNS_PP(E2K_dict):
             propmod_w = SHELLS_dict[key].get('PROPMODW', 1)
             if shell_area:
                 for agg_prop in agg_props:
-                    agg_props2.append(Agg_Props(
-                        agg_prop.material, 
-                        agg_prop.mat_type, 
-                        agg_prop.wt_density, 
-                        agg_prop.thickness, 
-                        shell_area, 
-                        agg_prop.thickness * shell_area, 
-                        agg_prop.thickness * shell_area * agg_prop.wt_density * propmod_w))
+                    if agg_prop and agg_prop.thickness:   # error-catching
+                        agg_props2.append(Agg_Props(
+                            agg_prop.material, 
+                            agg_prop.mat_type, 
+                            agg_prop.wt_density, 
+                            agg_prop.thickness, 
+                            shell_area, 
+                            agg_prop.thickness * shell_area if agg_prop.thickness else 0, 
+                            agg_prop.thickness * shell_area * agg_prop.wt_density * propmod_w if (
+                                agg_prop.thickness and agg_prop.wt_density) else 0))
                 SHELLS_dict[key]['Memb_Agg_Props'] = agg_props2
         
         
