@@ -320,7 +320,20 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
     :param GWApath: The file name, including path, for the output GWA file
     :param GSA_ver: This should be provided as an integer or float (e.g. 10 or 10.1)
     :return: GWA file for reading into GSA"""
+    # ==================================
+    # ============= Titles =============
+    # ==================================
+    # TITLE | title | sub-title | calc | job_no | initials
+    title1_keys = E2K_dict.get('CONTROLS', {}).get('TITLE1',{}).keys() #'Title 1'
+    title1 = list(title1_keys)[0]
+    title2_keys = E2K_dict.get('CONTROLS', {}).get('TITLE2',{}).keys() #'Title 2'
+    title2 = list(title2_keys)[0]
+    
     GSA_num = check_GSA_ver(GSA_ver)
+    # ==================================
+    # ============= Units =============
+    # ==================================
+    
     units = E2K_dict['UNITS']
     grav_dict = {'m': 9.80665, 'cm': 980.665, 'mm': 9806.65, 'in': 32.2, 'ft': 386.4}
     grav = grav_dict.get(units.length, 9.81)
@@ -379,13 +392,17 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
     with open(GWApath, 'w') as gwa:
         # ** Writing initial lines to GWA **
         # NB "\xb0", "\xb2", "\xb3" are degree sign, squared and cubed symbols
-        gwa.write(r'!" This file was originally written by a Python script by the E2KtoJSON_code library"' + '\n')
+        gwa.write(r'! This file was originally written by a Python script by the E2KtoJSON_code library' + '\n')
+        gwa.write(r'! The model data was extracted from an ETABS text file (E2K or $ET)' + '\n')
+        gwa.write(r'!  ' + E2K_dict.get('File', {}).get('Header','') + '\n')
         gwa.write(r'!' + '\n')
         gwa.write(r'! Notes:' + '\n')
-        gwa.write(r'!   All data in this file will be interpreted as being in SI units' + '\n')
-        gwa.write(r'!   (ie. N m and kg) by GSA.' + '\n')
+        gwa.write(r'!   The user is warned to check the model and NOT to rely on the conversion' + '\n')
+        gwa.write(r'!   (it is particularly important to check the units, the properties' + '\n')
+        gwa.write(r'!    and the global forces).' + '\n')
         gwa.write(r'!' + '\n')
-        gwa.write('\t'.join(['TITLE.1','','','','','', 'AM', '\n']))
+        #   TITLE | title | sub-title | calc | job_no | initials
+        gwa.write('\t'.join(['TITLE.1', title1, title2, '', '', '', '', '\n']))
         
         gwa.write('\t'.join(['UNIT_DATA.1', 'FORCE', units.force, 
                              str(force_factor)]) + '\n')
