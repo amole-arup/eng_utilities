@@ -262,33 +262,38 @@ def scaleND(v, s):
 
 
 def Madd(M1, M2):
+    """Matrix addition (elementwise)"""
     return [[a+b for a, b in zip(c, d)] for c, d in zip(M1, M2)]
 
 
 def Msub(M1, M2):
+    """Matrix subtraction (elementwise)"""
     return [[a-b for a, b in zip(c, d)] for c, d in zip(M1, M2)]
 
 
 def Mtranspose(M):
+    """Matrix transposition"""
     return list(zip(*M))
 
 
 def Mmult(M1, M2):
+    """Matrix multiplication (no checks)"""
     return [[sum(a*b for a, b in zip(c, d)) for c in Mtranspose(M2)] for d in M1]
 
 
-def MI(n):
+def MI(n: int):
+    """nxn identity matrix"""
     return [[1 if i==j else 0 for i in range(n)] for j in range(n)]
 
 
-def Minv(M):
+def Minv(matrix):
     """Returns the inverse of a square matrix using Gaussian elimination
     Raises a ValueError if matrix is non-square or singular"""
-    n = len(M)
-    if sum(len(M)!=n for m in M):
+    n = len(matrix)
+    if sum(len(matrix)!=n for m in matrix):
         raise ValueError('Matrix is not square.')
     
-    Mm = M.copy() # otherwise original will be modified
+    Mm = matrix.copy() # otherwise original will be modified
     Im = MI(n)
     
     for i in range(n):
