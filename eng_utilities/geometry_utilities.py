@@ -325,7 +325,7 @@ def Minv(matrix):
         if s == 0:
             err_msg = 'Singular Matrix\n' 
             err_msg += f'Processing row {i+1} of {n}:\n' 
-            err_msg +=  repr(M)
+            err_msg +=  repr(Mm)
             raise ValueError(err_msg)
         
         Mm[i] = scaleND(Mm[i], 1 / s)
