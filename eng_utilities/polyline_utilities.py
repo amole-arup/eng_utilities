@@ -140,3 +140,124 @@ def sec_area_3D(pt3dlist):
     area  = 0.5 * mag3D(v_sum)
     #print("So the Area of Slab is ..."+ str(area) )
     return area # This will always be positive
+
+def min_x_pt(pt_dict):
+    """Returns the key of the point at minimum x 
+    (with minimum y) in the XY plane (Z is ignored)
+    pt_dict is a collection of 'pt_ID: (x, y, z)'
+    key-value pairs"""
+    nmin = (9.9E12, 9.9E12)
+    the_node = None
+    for k,v in pt_dict.items():
+        if v[0] == nmin[0]:
+            if v[1] < nmin[1]:
+                the_node = k
+                nmin = (v[0], v[1])
+        elif v[0] < nmin[0]:
+            the_node = k
+            nmin = (v[0], v[1])
+    return the_node
+
+
+def loop_finder(pt_dict, connections_dict, start_pt_ID=None):
+    """Returns a list containing 
+    a closed loop of connected points
+    
+    The strategy is to follow connected nodes, always 
+    choosing the one that is on the right hand side
+    so that the final loop is anti-clockwise. Note
+    that the returned list may not be the only loop 
+    present. Note also that this algorithm does not
+    check for crossing lines.
+
+    Args:
+        coords_dict:  is a collection of 'pt_ID: (x, y, z)'
+            key-value pairs
+        connections_dict: is a collection of 
+            'pt0_ID: [pt1_ID, pt2_ID, pt3_ID, ...]'
+            where pt0 is connected to each of the 
+            referenced points pt1_ID, pt2_ID etc.
+        start_pt_ID: """
+    
+    if start_pt_ID is None:
+        pt0_ID = start_pt_ID
+    else:
+        pt0_ID = min_x_pt(pt_dict)
+        polar_pt0 = cart2cyl(pt_dict.get(pt0_ID))
+    theta = 0
+    
+    loop_list = [pt0_ID]
+    pt_ID = pt0_ID
+    while True:
+        connected_node_IDs = connections_dict.get(pt_ID, [])
+        if len(connected_node_IDs) == 0 or connected_node_IDs == [pt0_ID]:
+            loop_list = [pt_ID]
+            break
+        else:
+            node_coords = [pt_dict.get(node_ID) for node_ID in connected_node_IDs]
+            polar_coords = [cart2cyl(coords) for coords in node_coords]
+            angles = [angfix(ang - theta) for _, ang, _ in polar_coords]
+            min_ang_pt = min((ang, ID) for ang, ID in zip(angles, connected_node_IDs))
+            new_pt_ID = min_ang_pt[1]
+            if len(loop_list) > 1:
+                if new_pt_ID == loop_list[1]:
+                    break
+            loop_list.append(new_pt_ID)
+            pt_ID = new_pt_ID
+    return loop_list
+
+
+def line_intersection2D(line1, line2):
+    """Lines are defined as a tuple of tuples:
+        ((x1, y1), (x2, y2))
+    These are then converted into parametric format:
+        point + t * vector
+    pt(t) = p + t * v
+    p1(t1) = p1 + t1 * v1
+    p2(t2) = p2 + t2 * v2
+    
+    Result: 
+
+    """
+    p1, v1 = line1[0], sub2D(line1[1], line1[0])
+    p2, v2 = line2[0], sub2D(line2[1], line2[0])
+     
+    denom = v1[0] * v2[1] - v1[1] * v2[0]
+    if denom == 0:
+        return {'type': 'parallel'}
+    else:
+        crossing_type = None
+        t1 = ((p1[1] - p2[1]) * v2[0] - (p1[0] - p2[0]) * v2[1]) / denom
+        if (0 <= t1 <= 1):
+            crossing_type = 'line1'
+        t2 = ((p1[1] - p2[1]) * v1[0] - (p1[0] - p2[0]) * v1[1]) / denom
+        if (0 <= t2 <= 1):
+            crossing_type = 'both' if crossing_type else 'line2'
+        if crossing_type is None:
+            crossing_type = 'neither'
+        return {'intersection': add2D(p1, scale2D(v1, t1)), 
+        't1': t1, 't2': t2, 'type': crossing_type,
+        }
+    
+
+def self_intersections(line_list, sorted=False):
+    if sorted == False:
+        sorted_list = sorted((pt1, pt2) if pt1[0] < pt2[0] else (pt2, pt1) 
+            for pt1, pt2 in line_list)
+    else:
+        sorted_list = line_list
+    
+    line_stack = []
+    cross_list = []
+
+    for line in sorted_list:
+        x = line[0][0]
+        line_stack2 = []
+        for line2 in line_stack:
+            if line2[0][0] >= x:
+                line_stack2.append(line2)
+                crossing = line_intersection2D(line, line2)
+                if crossing['type'] == 'both':
+                    cross_list.append(crossing['intersection'])
+        line_stack = line_stack2.copy()
+        line_stack.append(line)
