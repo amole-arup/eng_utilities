@@ -1,5 +1,8 @@
+"""Contains post-processing operations for gathering section quantities 
+and preparing for GWA export.
+
+TO DO: Add logic to SD_SECTIONS_PP for when it is not simply one Polygon
 """
-TO DO: problems with agg prop and SD sections"""
 
 from itertools import accumulate
 from operator import itemgetter
@@ -430,6 +433,7 @@ def SD_SECTIONS_PP(E2K_dict):
         if shapes:
             for name, shape in shapes.items():
                 # add other options for SHAPETYPES, such as custom embedded sections
+                # add logic to cover when the SD Section contains multiple - need to combine GWA strings
                 if shape.get('MATERIAL') and shape.get('SHAPETYPE') == 'POLYGON':
                     if isinstance(shape['X'], (list, tuple)) and isinstance(shape['Y'], (list, tuple)):
                         polyline = list(zip(shape['X'], shape['Y']))
