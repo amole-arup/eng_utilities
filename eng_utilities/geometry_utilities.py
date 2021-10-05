@@ -20,10 +20,13 @@ def dist2D(pt1, pt2):
 
 
 def mag2D(v2D):
+    """Returns the magnitude of the vector"""
     return (v2D[0]**2 + v2D[1]**2)**0.5
 
 
 def ang2D(pt):
+    """Returns the anti-clockwise angle of the 
+    vector from the x-axis (in radians)"""
     return atan2(pt[1],pt[0])
 
 
@@ -32,9 +35,24 @@ def scale2D(v,scale):
     return (v[0] * scale, v[1] * scale)
 
 
+def add2D(v1,v2):
+    """Vector addition of v1 to v2"""
+    return (v1[0] + v2[0], v1[1] + v2[1])
+
+
 def sub2D(v1,v2):
     """Vector subtraction of v2 from v1"""
     return (v1[0] - v2[0], v1[1] - v2[1])
+
+
+def mul2D(v1,v2):
+    """Elementwise multiplication of vector v1 with v2"""
+    return (v1[0] * v2[0], v1[1] * v2[1])
+
+
+def div2D(v1,v2):
+    """Elementwise division of vector v1 by v2"""
+    return (v1[0] / v2[0], v1[1] / v2[1])
 
 
 def cross2D(v1,v2):
@@ -331,7 +349,7 @@ def Mdet(matrix):
     
     """
     n = len(matrix)
-    if sum(len(matrix)!=n for m in matrix):
+    if sum(len(m)!=n for m in matrix):
         raise ValueError('Matrix is not square.')
     
     M = matrix.copy() # otherwise original will be modified
