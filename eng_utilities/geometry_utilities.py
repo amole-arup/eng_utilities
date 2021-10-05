@@ -98,12 +98,16 @@ def planar_angle2D(v1, v2):
 # ===========================
 
 def cart2cyl(vec3D):
+    """Converts a 3D cartesian vector (x, y, z) to 
+    cylindrical coordinates (r, theta, z)"""
     x, y, z = vec3D
     r = (x**2 + y**2)**0.5
     return r, atan2(y, x), z
 
 
 def cyl2cart(vec3D):
+    """Converts a 3D cylindrical vector (r, theta, z) to 
+    cartesian coordinates (x, y, z)"""
     r, theta, z = vec3D
     return r * cos(theta), r * sin(theta), z
 
@@ -226,27 +230,34 @@ def fmt_3x3(dc, fmt='7.4f'):
 # ===========================
 
 def magND(v):
+    """Returns magnitude of an nD vector"""
     return sum(vv*2 for vv in v) ** 0.5
 
 
 def unitND(v):
+    """Returns a unit vector in the same direction"""
     s = magND(v)
     return [s * vv for vv in v]
 
 
 def addND(v1, v2):
+    """Adds two nD vectors together, itemwise"""
     return [vv1 + vv2 for vv1, vv2 in zip(v1, v2)]
 
 
 def subND(v1, v2):
+    """Subtracts two nD vectors together, itemwise"""
     return [vv1 - vv2 for vv1, vv2 in zip(v1, v2)]
 
 
 def dotND(v1, v2):
+    """Returns dot product of two nD vectors
+    (same as itemwise multiplication)"""
     return sum(vv1 * vv2 for vv1, vv2 in zip(v1, v2))
 
 
 def scaleND(v, s):
+    """Scales an nD vector by a factor s"""
     return [s * vv for vv in v]
 
 
@@ -271,7 +282,7 @@ def MI(n):
 
 
 def Minv(M):
-    """Returns the inverse of a square matrix
+    """Returns the inverse of a square matrix using Gaussian elimination
     Raises a ValueError if matrix is non-square or singular"""
     n = len(M)
     if sum(len(M)!=n for m in M):
@@ -305,7 +316,7 @@ def Minv(M):
 
 
 def Mdet(matrix):
-    """Returns the determinant of a square matrix
+    """Returns the determinant of a square matrix using Gaussian elimination
     
     Determinant is calculated by Gaussian elimination method
     A ValueError is raised if matrix is non-square or singular
@@ -349,7 +360,7 @@ def Mdet(matrix):
 
 def kron():
     """
-    Kronecker product"""
+    TO DO - Kronecker product"""
     pass
 
 
