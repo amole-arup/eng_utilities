@@ -539,17 +539,20 @@ def STORIES_PP(E2K_dict):
     TODO: this will need to be revised to take 
     'Tower' into account
     """
-    if E2K_dict.get('STORIES - IN SEQUENCE FROM TOP'):
-        STORY_dict = E2K_dict['STORIES - IN SEQUENCE FROM TOP'].get('STORY')
-        if STORY_dict:
-            STORY_keys = STORY_dict.keys()
-            base = sum(STORY_dict[key].get('ELEV',0) for key in STORY_keys)
-            heights = [STORY_dict[key].get('HEIGHT',0) for key in STORY_keys]
-            relative_elevations = list(accumulate(heights[::-1]))[::-1]
-            absolute_elevations = [base + relev for relev in relative_elevations]
-            for key, relev, abs_elev in zip(STORY_keys, relative_elevations, absolute_elevations):
-                STORY_dict[key]['RELEV'] = relev
-                STORY_dict[key]['ABS_ELEV'] = abs_elev    
+    STORY_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('STORY',{})
+    if STORY_dict:
+        STORY_keys = STORY_dict.keys()
+        base = sum(STORY_dict[key].get('ELEV',0) for key in STORY_keys)
+        heights = [STORY_dict[key].get('HEIGHT',0) for key in STORY_keys]
+        relative_elevations = list(accumulate(heights[::-1]))[::-1]
+        absolute_elevations = [base + relev for relev in relative_elevations]
+        story_ID = 1 # len(STORY_keys)
+        for key, relev, abs_elev in zip(STORY_keys, relative_elevations, absolute_elevations):
+            STORY_dict[key]['ID'] = story_ID
+            story_ID += 1
+            STORY_dict[key]['RELEV'] = relev
+            STORY_dict[key]['ABS_ELEV'] = abs_elev  
+
 
 
 def POINTS_PP(E2K_dict):
@@ -589,13 +592,13 @@ def POINT_ASSIGNS_PP(E2K_dict):
     
     # Get reference to diaphragms and set up GROUPS subdirectory
     DIAPHRAGMS_dict = E2K_dict.get('DIAPHRAGM NAMES', {}).get('DIAPHRAGM', {})
-    # diaphragms_list = DIAPHRAGMS_dict.keys()
     DIAPHRAGM_GROUPS_dict = {}
-    if E2K_dict.get('DIAPHRAGM NAMES', {}):
-        if E2K_dict['DIAPHRAGM NAMES'].get('GROUPS', None) is not None:
+    if E2K_dict.get('DIAPHRAGM NAMES'):
+        if E2K_dict['DIAPHRAGM NAMES'].get('GROUPS', None) is None:
             E2K_dict['DIAPHRAGM NAMES']['GROUPS'] = {}
-            DIAPHRAGM_GROUPS_dict = E2K_dict['DIAPHRAGM NAMES']['GROUPS']
+    DIAPHRAGM_GROUPS_dict = E2K_dict['DIAPHRAGM NAMES']['GROUPS']
     
+           
     # I am not sure what userjoints are for... we could collect them here
     # if so, then the corresponding block ~30 lines down should be uncommented
     """DIAPHRAGM_USERJOINTS_dict = {}
@@ -634,7 +637,7 @@ def POINT_ASSIGNS_PP(E2K_dict):
                 # append current node to group list and assign to dictionary
                 d_group.append(nd_key)
                 DIAPHRAGM_GROUPS_dict[diaph_key] = d_group
-
+    
             """# Add to Userjoints groups (not sure what these are used for...)
             # for now we can group them by story
             if nd_dict.get('USERJOINT', None) is not None: 
@@ -644,6 +647,7 @@ def POINT_ASSIGNS_PP(E2K_dict):
                 # append current node to group list and assign to dictionary
                 uj_group.append(nd_key)
                 DIAPHRAGM_USERJOINTS_dict[uj_key] = uj_group"""
+    
 
 
 def LINE_CONN_PP(E2K_dict):
