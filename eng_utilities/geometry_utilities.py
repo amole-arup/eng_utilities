@@ -115,12 +115,13 @@ def planar_angle2D(v1, v2):
 # ========== 3 D ============
 # ===========================
 
-def cart2cyl(vec3D):
+def cart2cyl(vec3D, default_ang=0):
     """Converts a 3D cartesian vector (x, y, z) to 
     cylindrical coordinates (r, theta, z)"""
     x, y, z = vec3D
     r = (x**2 + y**2)**0.5
-    return r, atan2(y, x), z
+    ang = default_ang if x == y == 0 else atan2(y,x)
+    return r, ang, z
 
 
 def cyl2cart(vec3D):
