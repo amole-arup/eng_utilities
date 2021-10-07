@@ -1,4 +1,9 @@
-""""""
+"""Utilities for generating GWA text files from the processed
+dictionary generated from ETABS text files (E2K, $ET)
+
+TODO:
+* Add assemblies for spandrels and piers
+"""
 
 import sqlite3
 from os.path import exists
@@ -23,6 +28,25 @@ def check_GSA_ver(GSA_ver):
                 GSA_num += try_numeric('0.' + GSA_list[1])
         return GSA_num
     return 10
+
+
+def GWA_list_shrink(num_list):
+    """Returns a string containing sorted abbreviated values
+    e.g. [5, 8, 4, 3, 1] -> "1 3 to 5 8"
+    Write to GWA file using ' '.join(GWA_sort(num_list))"""
+    glist = sorted(num_list)
+    glist.append(0)
+    olist = []
+    n0 = glist[0]
+    n1 = glist[0]
+    for n in glist[1:]:
+        if n == n1 + 1:
+            n1 = n
+        else:
+            olist.extend([str(n0), 'to', str(n1)] if (n0 != n1) else [str(n1)])
+            n0 = n
+            n1 = n    
+    return ' '.join(olist)
 
 
 GSA_SECT_SHAPE = {
@@ -355,7 +379,10 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
         ('POINT SPRING PROPERTIES', 'POINTSPRING'),
     )]
 
-    STORY_dict = E2K_dict['STORIES - IN SEQUENCE FROM TOP']['STORY']
+    STORY_dict, DIAPHRAGMS_dict, DIAPHRAGM_GROUPS_dict = [E2K_dict.get(k1,{}).get(k2,{}) for k1, k2 in (
+        ('STORIES - IN SEQUENCE FROM TOP', 'STORY'),
+        ('DIAPHRAGM NAMES', 'DIAPHRAGM'),
+        ('DIAPHRAGM NAMES', 'GROUPS'))]
     
     NODE_dict, LINE_dict, AREA_dict = [E2K_dict.get(k1,{}).get(k2,{}) for k1, k2 in (
         ('POINT ASSIGNS', 'POINTASSIGN'), 
@@ -699,13 +726,13 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
                     # LIST | num | name | type | list
                     gwa.write('\t'.join(['LIST.1', str(list_id), g_name, 'NODE']))
                     gwa.write('\t')
-                    gwa.write(' '.join([str(n) for n in n_list]))
+                    gwa.write(GWA_list_shrink(n_list))
                     gwa.write('\n')
                     list_id += 1
                 if len(el_list) > 0:
                     gwa.write('\t'.join(['LIST.1', str(list_id), g_name, 'ELEMENT']))
                     gwa.write('\t')
-                    gwa.write(' '.join([str(n) for n in el_list]))
+                    gwa.write(GWA_list_shrink(el_list))
                     gwa.write('\n')
                     list_id += 1
 
@@ -718,7 +745,28 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
         # type: ALL, XY_PLANE, PIN, XY_PLANE_PIN, <link>
         
         # ** Writing Diaphragm Constraints to GWA **
-        # TODO: Add diaphragms based on groups for each floor
+        # Add diaphragms based on groups for each floor 
+        for diaph_key, diaph_node_list in DIAPHRAGM_GROUPS_dict.items():
+            n_list = [NODE_dict.get(nd_key,{}).get('ID') for nd_key in diaph_node_list]
+            g_name = f'Diaphragm {diaph_key[1]} @ {diaph_key[0]}'
+            # LIST | num | name | type | list
+            gwa.write('\t'.join(['LIST.1', str(list_id), g_name, 'NODE']))
+            gwa.write('\t')
+            gwa.write(GWA_list_shrink([n for n in n_list if n is not None]))
+            gwa.write('\n')
+            list_id += 1
+
+            diaph_dict = DIAPHRAGMS_dict.get(diaph_key[1], {})
+            diaphragm_type = diaph_dict.get('TYPE', 'RIGID')
+            g_string = r'"""' + str(g_name) + r'"""'
+            if diaphragm_type == 'RIGID':
+                d_type = 'XY_PLANE_PIN'
+                ostr = [str(val) for val in ['RIGID.3', g_name, 0, d_type, g_string,'all','']]
+                gwa.write('\t'.join(ostr) + '\n')
+
+        
+        # POLYLINE | num | name | colour | grid_plane | num_dim | desc
+        # STORY_dict
 
 
         # ========================
