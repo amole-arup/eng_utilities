@@ -5,8 +5,18 @@ Functions exist for pushing the data out to a GSA text file.
 TODO:
 - add point and area loads (including point loads on beams) (0%)
 - diaphragm constraint (0%)
-- calculate floor are for frame without slabs (60%)
+- calculate floor are for frame without slabs (80%)
 - set up analyses and combinations (50%)
+- coordinate systems (25%)
+- grid layouts (0%)
+- functions (response spectra, ground motions etc) (0%)
+- Wind loads (0%)
+- Seismic loads (0%)
+- logs (0%)
+- section pools (0%)
+
+Note: At the moment there is no log kept of elements that do not "make sense".
+This could be useful for identifying how complete the record is.
 """
 
 #from os import listdir
