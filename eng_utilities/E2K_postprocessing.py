@@ -1,7 +1,9 @@
 """Contains post-processing operations for gathering section quantities 
-and preparing for GWA export.
+and also, in some cases, prepares for GWA export.
 
-TO DO: Add logic to SD_SECTIONS_PP for when it is not simply one Polygon
+TODO: 
+* Add logic to SD_SECTIONS_PP for when it is not simply one Polygon
+* Work out what USERJOINTS are and uncomment the relevant code that has already been written
 """
 
 from itertools import accumulate
@@ -575,41 +577,73 @@ def POINT_ASSIGNS_PP(E2K_dict):
     
     NOTE: not all points are present in this dictionary, so 
     additional values will be added as necessary by other 
-    post-processing in the element assignations
+    post-processing in the element assignations. Among other
+    things, this means that they will miss out on being
+    included in diaphragm constraint groups.
     """
     # Get reference to story elevations
-    main_key = 'STORIES - IN SEQUENCE FROM TOP'
-    sub_key = 'STORY'
-    STORY_dict = get_E2K_subdict(E2K_dict, main_key, sub_key)
+    STORY_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('STORY', {})
     
     # Get reference to points coordinates
-    main_key = 'POINT COORDINATES'
-    sub_key = main_key.split()[0]
-    POINTS_dict = get_E2K_subdict(E2K_dict, main_key, sub_key)
+    POINTS_dict = E2K_dict.get('POINT COORDINATES', {}).get('POINT', {})
     
+    # Get reference to diaphragms and set up GROUPS subdirectory
+    DIAPHRAGMS_dict = E2K_dict.get('DIAPHRAGM NAMES', {}).get('DIAPHRAGM', {})
+    # diaphragms_list = DIAPHRAGMS_dict.keys()
+    DIAPHRAGM_GROUPS_dict = {}
+    if E2K_dict.get('DIAPHRAGM NAMES', {}):
+        if E2K_dict['DIAPHRAGM NAMES'].get('GROUPS', None) is not None:
+            E2K_dict['DIAPHRAGM NAMES']['GROUPS'] = {}
+            DIAPHRAGM_GROUPS_dict = E2K_dict['DIAPHRAGM NAMES']['GROUPS']
+    
+    # I am not sure what userjoints are for... we could collect them here
+    # if so, then the corresponding block ~30 lines down should be uncommented
+    """DIAPHRAGM_USERJOINTS_dict = {}
+    if E2K_dict.get('DIAPHRAGM NAMES', {}):
+        if E2K_dict['DIAPHRAGM NAMES'].get('USERJOINTS', None) is not None:
+            E2K_dict['DIAPHRAGM NAMES']['USERJOINTS'] = {}
+            DIAPHRAGM_USERJOINTS_dict = E2K_dict['DIAPHRAGM NAMES']['USERJOINTS']"""
+
     # Get reference to Point Assignments
-    main_key = 'POINT ASSIGNS'
-    sub_key = main_key[:-1].replace(' ','')
-    NODES_dict = get_E2K_subdict(E2K_dict, main_key, sub_key)
+    NODES_dict = E2K_dict.get('POINT ASSIGNS', {}).get('POINTASSIGN', {})
     dict_keys  = NODES_dict.keys()
     
     # Check if dictionary has already been processed
     # If it has, we don't want this messing with the IDs
     if not NODES_dict[list(dict_keys)[0]].get('ID'):
-        for i, key in enumerate(dict_keys):
-            point, story = key
+        for i, (nd_key, nd_dict) in enumerate(NODES_dict.items()):
+            point, story = nd_key
             coords = POINTS_dict[point]
             if len(coords) == 3:
                 x, y, dz = coords
-                NODES_dict[key]['DELTAZ'] = dz
+                nd_dict['DELTAZ'] = dz
             else:
                 x, y = coords
                 dz = 0
             abselev = STORY_dict[story]['ABS_ELEV']
             #abselev = POINTS_dict.get(point, None)
             
-            NODES_dict[key]['COORDS'] = (x, y, abselev - dz)
-            NODES_dict[key]['ID'] = i + 1
+            nd_dict['COORDS'] = (x, y, abselev - dz)
+            nd_dict['ID'] = i + 1
+
+            # Add to Diaphragm groups
+            if nd_dict.get('DIAPH', None) is not None: 
+                diaph_key = (story, nd_dict.get('DIAPH'))
+                # if key exists extract values (a list), otherwise return empty list
+                d_group = DIAPHRAGM_GROUPS_dict.get(diaph_key, [])
+                # append current node to group list and assign to dictionary
+                d_group.append(nd_key)
+                DIAPHRAGM_GROUPS_dict[diaph_key] = d_group
+
+            """# Add to Userjoints groups (not sure what these are used for...)
+            # for now we can group them by story
+            if nd_dict.get('USERJOINT', None) is not None: 
+                uj_key = (story)
+                # if key exists extract values (a list), otherwise return empty list
+                uj_group = DIAPHRAGM_USERJOINTS_dict.get(uj_key, [])
+                # append current node to group list and assign to dictionary
+                uj_group.append(nd_key)
+                DIAPHRAGM_USERJOINTS_dict[uj_key] = uj_group"""
 
 
 def LINE_CONN_PP(E2K_dict):
