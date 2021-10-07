@@ -325,14 +325,14 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
     # ==================================
     # TITLE | title | sub-title | calc | job_no | initials
     title1_keys = E2K_dict.get('CONTROLS', {}).get('TITLE1',{}).keys() #'Title 1'
-    title1 = list(title1_keys)[0]
+    title1 = list(title1_keys)[0] if title1_keys else ''
     title2_keys = E2K_dict.get('CONTROLS', {}).get('TITLE2',{}).keys() #'Title 2'
-    title2 = list(title2_keys)[0]
+    title2 = list(title2_keys)[0] if title2_keys else ''
     
     GSA_num = check_GSA_ver(GSA_ver)
-    # ==================================
+    # =================================
     # ============= Units =============
-    # ==================================
+    # =================================
     
     units = E2K_dict['UNITS']
     grav_dict = {'m': 9.80665, 'cm': 980.665, 'mm': 9806.65, 'in': 32.2, 'ft': 386.4}
@@ -710,6 +710,18 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
                     list_id += 1
 
         # ========================
+        # =====  Diaphragms  =====
+        # ========================
+        # RIGID.3 | name | primary_node | type | constrained_nodes | stage | parent_member
+        # RIGID.3 <insert example>
+        #
+        # type: ALL, XY_PLANE, PIN, XY_PLANE_PIN, <link>
+        
+        # ** Writing Diaphragm Constraints to GWA **
+        # TODO: Add diaphragms based on groups for each floor
+
+
+        # ========================
         # =====  Load Cases  =====
         # ========================
         
@@ -744,9 +756,9 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
                 gwa.write('\t'.join(ostr) + '\n')        
         
 
-        # =========================
-        # =====  Beams Loads  =====
-        # =========================
+        # ========================
+        # =====  Beam Loads  =====
+        # ========================
         
         # LOAD_BEAM_UDL.2 | name | list | case | axis | proj | dir | value
         # LOAD_BEAM_UDL.2	Uniform Load	286 287 295 296	2	GLOBAL	NO	Z	-5000
@@ -780,6 +792,67 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
                         gwa.write('\t'.join(ostr) + '\n') 
                         #pass
             #pass
+
+        # ========================
+        # =====  Area Loads  =====
+        # ========================
+        
+        #  AREALOAD  "F42"  "MEP02"  TYPE "UNIFF"  DIR "GRAV"  LC "SW"  FVAL 0.001
+        #  AREALOAD  "F7"  "L3"  TYPE "UNIFLOADSET"  "Lobby"
+        #  SHELLUNIFORMLOADSET "Lobby"  LOADPAT "LLNR"  VALUE 0.004
+        #  SHELLUNIFORMLOADSET "Lobby"  LOADPAT "SDL"  VALUE 0.0034
+ 
+
+        # LOAD_2D_FACE.2 | name | list | case | axis | type | proj | dir | value(n) | r | s
+        # LOAD_2D_FACE.2 <insert example>
+        # type: CONS (constant) | GEN (at each corner) | POINT (one value)
+        # proj: YES | NO
+        # dir: X | Y | Z
+        # value: load values (N/m2 !?)
+        # r, s: load position for POINT
+
+        LC_ID_lookup_dict = {v['ID']: k for k, v in LOADCASE_dict.items()}
+        print(LC_ID_lookup_dict)
+        print(LOADCASE_dict)
+
+        print('len of AREA_LOAD_dict', len(AREA_LOAD_dict))
+        for load_key, load_list in AREA_LOAD_dict.items():
+            member, story, lc = load_key
+            sh_ID = AREA_dict.get((member, story),{}).get('ID')
+            lc_ID = LOADCASE_dict.get(lc,{}).get('ID')
+            #LC_ID_lookup_dict[lc] # reverse lookup not required
+            if sh_ID:
+                for load_dict in load_list:
+                    f_dir = {'GRAV': ('GLOBAL', 'Z', -1)}.get(load_dict.get('DIR'), None)
+                    if f_dir and load_dict.get('TYPE') == 'UNIFF':  # 'CONS' - uniform load
+                        load_type = 'CONS'
+                        load_value = load_dict.get('DATA')[0][1]
+                        # LOAD_2D_FACE.2 | name | list | case | axis | type | proj | dir | value(n) | r | s
+                        ostr = [str(val) for val in ['LOAD_2D_FACE.2', '', bm_max + sh_ID, lc_ID, 
+                                f_dir[0], load_type, 'NO', f_dir[1], f_dir[2] * load_value]]
+                        gwa.write('\t'.join(ostr) + '\n') 
+                        #pass
+                    elif f_dir and load_dict.get('TYPE') == 'point_designation_here':  # 'POINT' 
+                        load_type = 'POINT'
+                        load_value = load_dict.get('DATA')[0][1]
+                        # LOAD_2D_FACE.2 | name | list | case | axis | type | proj | dir | value(n) | r | s
+                        ostr = [str(val) for val in ['LOAD_2D_FACE.2', '', bm_max + sh_ID, lc_ID, 
+                                f_dir[0], load_type, 'NO', f_dir[1], f_dir[2] * load_value]]
+                        gwa.write('\t'.join(ostr) + '\n') 
+                    #elif f_dir and load_dict.get('TYPE') == 'node_designation_here':  # 'GEN' 
+                    #    load_type = 'GEN'
+                    #    value_1, value_2, value_3, value_4 = load_dict.get('DATA')
+                    #    # LOAD_2D_FACE.2 | name | list | case | axis | type | proj | dir | value(n) | r | s
+                    #    ostr = [str(val) for val in ['LOAD_2D_FACE.2', '', bm_max + sh_ID, lc_ID, f_dir[0], 
+                    #            load_type, 'NO', f_dir[1], -1 * pos_1, f_dir[2] * value_1, -1 * pos_2, f_dir[2] * value_2]]
+                    #    gwa.write('\t'.join(ostr) + '\n') 
+
+        # ==============================
+        # ===== Load Combinations  =====
+        # ==============================
+        
+        # ** Writing Load Combinations to GWA **
+        # COMBINATION | case | name | desc | bridge | note
 
         gwa.write('END\n')
 
