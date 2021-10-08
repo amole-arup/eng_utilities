@@ -12,12 +12,12 @@ from collections import namedtuple
 from dateutil import parser
 from os.path import exists, isfile, join, basename, splitext
 
-from eng_utilities.general_utilities import try_numeric, unit_validate, Units
+from eng_utilities.general_utilities import try_numeric, unit_validate, Units, units_conversion_factor
 from eng_utilities.geometry_utilities import *
-from eng_utilities.polyline_utilities import sec_area_3D
+from eng_utilities.polyline_utilities import sec_area_3D, perim_area_centroid
 from eng_utilities.E2K_section_utilities import *
 from eng_utilities.GWA_utilities import GWA_sec_gen, GWA_GEO
-from eng_utilities.polyline_utilities import perim_full_props
+from eng_utilities.polyline_utilities import perim_full_props, all_loops_finder
 
 
 Frame_Agg_Props = namedtuple('Frame_Agg_Props', 'material mat_type wt_density area')
@@ -190,11 +190,12 @@ def enhance_shell_props(s_dict, MAT_PROP_dict):
         md_type = get_mat_type(md_dict)
         md_unit_wt = get_weight_density(md_dict)
         
-        s_dict.update({k:v for k, v in deck_props_func(s_dict) if k in ['P', 'D_AVE']})
+        additional_data = deck_props_func(s_dict)
+        s_dict.update({k:v for k, v in additional_data.items() if k in ['P', 'D_AVE', 'T_AVE']})
         B = s_dict.get('DECKRIBSPACING')
-        P = s_dict.get('P')
-        D_AVE = s_dict.get('D_AVE')
-        T_AVE = s_dict.get('T_AVE')
+        P = s_dict.get('P', 0)
+        D_AVE = s_dict.get('D_AVE', 0)
+        T_AVE = s_dict.get('T_AVE', 0)
         agg_props = []
         agg_props.append(Shell_Agg_Props(conc_mat, mc_type, mc_unit_wt, D_AVE))
         agg_props.append(Shell_Agg_Props(deck_mat, md_type, md_unit_wt, T_AVE))
@@ -394,7 +395,7 @@ def ENCASED_SECTIONS_PP(E2K_dict):
             agg_props = []
             embed_area = embed_props.get('A')
             if embed_props.get('UNITS'):
-                model_units = E2K_dict('UNITS')
+                model_units = E2K_dict['UNITS']
                 embed_props = convert_prop_units(embed_props, model_units.length)
                 embed_area = embed_props.get('A')
             agg_props.append(Frame_Agg_Props(embed_mat, embed_mat_type.casefold(), embed_unit_wt, embed_area))
@@ -592,7 +593,7 @@ def POINT_ASSIGNS_PP(E2K_dict):
     
     # Get reference to diaphragms and set up GROUPS subdirectory
     DIAPHRAGMS_dict = E2K_dict.get('DIAPHRAGM NAMES', {}).get('DIAPHRAGM', {})
-    DIAPHRAGM_GROUPS_dict = {}
+    # DIAPHRAGM_GROUPS_dict = {}
     if E2K_dict.get('DIAPHRAGM NAMES'):
         if E2K_dict['DIAPHRAGM NAMES'].get('GROUPS', None) is None:
             E2K_dict['DIAPHRAGM NAMES']['GROUPS'] = {}
@@ -1013,6 +1014,67 @@ def LOAD_CASES_PP(E2K_dict):
         lc_dict['ID'] = i + 1
         # return
 
+
+## ==================================
+## ===  Geometry Post-processing  ===
+## ==================================
+
+def story_geometry(E2K_dict):
+    STORY_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('STORY',{})
+    NODE_dict = E2K_dict.get('POINT ASSIGNS', {}).get('POINTASSIGN', {})
+    LINE_dict = E2K_dict.get('LINE ASSIGNS', {}).get('LINEASSIGN',{})
+    AREA_dict = E2K_dict.get('AREA ASSIGNS', {}).get('AREAASSIGN',{})
+    if E2K_dict.get('DIAPHRAGM NAMES', None) is None:
+        E2K_dict['DIAPHRAGM NAMES'] = {}
+    if E2K_dict.get('DIAPHRAGM NAMES', {}).get('LOOPS') is None:
+        E2K_dict['DIAPHRAGM NAMES']['LOOPS'] = {}
+    DIAPHRAGM_LOOPS_dict = E2K_dict['DIAPHRAGM NAMES']['LOOPS']
+    if E2K_dict.get('MODEL SUMMARY', None) is None:
+        E2K_dict['MODEL SUMMARY'] = {}
+    #print('E2K keys', E2K_dict.keys())
+    MODEL_SUMMARY_dict = E2K_dict['MODEL SUMMARY']
+
+    units = E2K_dict.get('UNITS')    
+
+    for story_name in STORY_dict: # = '5/F'
+        line_list = [(k, v['JT1'], v['JT2']) 
+                for k, v in LINE_dict.items() 
+                if (k[1] == story_name and v['MEMTYPE'] =='BEAM')]
+        #edge_list = [(k, v['JT1'], v['JT2']) 
+        #        for k, v in LINE_dict.items() 
+        #        if (k[1] == story_name and v['MEMTYPE'] =='PANEL')]
+
+        """NODE_Connected_Beams_dict = {}
+        for b, n1, n2 in line_list:
+            # Lookup the set associated with node n1
+            # if there isn't one, create it (using the dictionary lookup default)
+            n_set = NODE_Connected_Beams_dict.get(n1, set())
+            n_set.add(b)
+            NODE_Connected_Beams_dict[n1] = n_set
+            n_set = NODE_Connected_Beams_dict.get(n2, set())
+            n_set.add(b)
+            NODE_Connected_Beams_dict[n2] = n_set"""
+
+        # Dictionary for looking up connected nodes for any node 
+        NODE_Connected_Nodes_dict = {}
+        for b, n1, n2 in line_list:
+            n_set = NODE_Connected_Nodes_dict.get(n1,set())
+            n_set.add(n2)
+            NODE_Connected_Nodes_dict[n1] = n_set
+            n_set = NODE_Connected_Nodes_dict.get(n2,set())
+            n_set.add(n1)
+            NODE_Connected_Nodes_dict[n2] = n_set
+        
+        nc_dict = {n: NODE_dict.get(n)['COORDS'] for n in NODE_Connected_Nodes_dict}
+        loops_list = all_loops_finder(nc_dict, NODE_Connected_Nodes_dict)
+        polylines = [[nc_dict[node] for node in loop] for loop in loops_list]
+        area = sum(perim_area_centroid(polyline)[0] for polyline in polylines)
+        if MODEL_SUMMARY_dict.get(story_name) is None:
+            MODEL_SUMMARY_dict[story_name] = {}
+            MODEL_SUMMARY_dict[story_name]['Loop_Area_m2'] = area * units_conversion_factor((units.length, 'm'))**2
+        
+        if len(sum(loops_list,[])) > 0:
+            DIAPHRAGM_LOOPS_dict[story_name] = loops_list.copy()
 
 
 ## =============================
