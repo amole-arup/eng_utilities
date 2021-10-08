@@ -3,8 +3,8 @@
 Functions exist for pushing the data out to a GSA text file.
 
 TODO:
+- split beams at intersections
 - add point and area loads (including point loads on beams) (0%)
-- diaphragm constraint (0%)
 - calculate floor are for frame without slabs (80%)
 - set up analyses and combinations (50%)
 - coordinate systems (25%)
@@ -14,6 +14,9 @@ TODO:
 - Seismic loads (0%)
 - logs (0%)
 - section pools (0%)
+- embedded sections
+- NONE sections -> dummy
+- check deck properties
 
 Note: At the moment there is no log kept of elements that do not "make sense".
 This could be useful for identifying how complete the record is.
@@ -98,12 +101,21 @@ def try_branch(a_dict, data_coll):
 def try_merge(a_dict, data_coll):
     """When the line of data has a key that matches an existing one
     it merges the data into the dictionary under the existing key"""
-    ## - Snip start
-    if data_coll[0][0] == 'SHAPE':
-        # c_dict = a_dict.copy()
-        try_branch(a_dict, data_coll)
-        return
-    ## - Snip end
+    try:
+        ## - Snip start
+        if not isinstance(data_coll, (list, tuple)):
+            print(f'In try_merge, data_coll is {data_coll}')
+        elif not isinstance(data_coll[0], (list, tuple)):
+            print(f'In try_merge, data_coll is {data_coll}')
+        elif data_coll[0][0] == 'SHAPE':
+            # c_dict = a_dict.copy()
+            try_branch(a_dict, data_coll)
+            return
+        ## - Snip end
+    except:
+        print(f'In try_merge, data_coll is {data_coll}')
+        print('Possibly a case of "IndexError: tuple index out of range"')
+
     for data in data_coll:
         try_1 = a_dict.get(data[0], None)
         if try_1 is not None:
@@ -175,7 +187,7 @@ def load_parser(d):
 def combo_func(the_dict, line):  
     line_key = line[0][0]
     combo_name = line[0][1]
-    data_type = line[1][0] # e.g. 'LOAD', 'SPEC', 'COMBO'
+    data_type = line[1][0] # e.g. 'LOAD', 'SPEC', 'COMBO', 'LOADCASE', 'DESIGN'
     line_dict = dict(line[1:])
     
     # if the line key is not already in the dictionary, add it
@@ -197,6 +209,9 @@ def combo_func(the_dict, line):
     # if the combination name is not already in the dictionary, add it
     if data_type == 'TYPE': # add type to the combination dictionary
         b_dict['TYPE'] = line_dict['TYPE']
+    elif data_type == 'DESIGN': # add type to the combination dictionary
+        # b_dict['DESIGN'] = line_dict['DESIGN']
+        b_dict.update({k:v for k,v in line_dict.items()})
     else: # add the different load cases with their load factor for each datatype
         #c_dict.get(data_type, []) + list(tuple([line_dict[data_type], line_dict['SF']]))
         if not b_dict.get(data_type): # if there is no datatype 'SPEC'
@@ -476,6 +491,10 @@ def process_E2K_dict(E2K_dict):
     LOAD_CASES_PP(E2K_dict) # post processing STATIC LOADS or LOAD PATTERNS
     #LINE_LOAD_PP(E2K_dict)
     MEMBER_quantities_summary(E2K_dict)
+    try:
+        story_geometry(E2K_dict)
+    except:
+        print('"story_geometry" failed')
     # LOADS   # TODO
     # GROUPS  # TODO
     
