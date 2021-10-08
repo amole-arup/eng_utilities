@@ -23,11 +23,11 @@ def perim_area_centroid(perim):
     closed 2D polylines (a list of 2D tuples - 
     e.g. [(x1, y1), (x2, y2), ...])"""
     res = [0.0, 0.0, 0.0]
-    x1, y1 = perim[0]
+    x1, y1, *_ = perim[0]
     # close the polyline if necessary
     if perim[0] != perim[-1]: perim.append(perim[0])
     for p2 in perim[1:]:
-        x2, y2 = p2
+        x2, y2, *_ = p2
         area = (x1 * y2 - x2 * y1) / 2.0
         res[0] += area
         res[1] += (x1 + x2) * area / 3.0
@@ -143,6 +143,7 @@ def sec_area_3D(pt3dlist):
     #print("So the Area of Slab is ..."+ str(area) )
     return area # This will always be positive
 
+
 def min_x_pt(pt_dict):
     """Returns the key of the point at minimum x 
     (with minimum y) in the XY plane (Z is ignored)
@@ -161,7 +162,7 @@ def min_x_pt(pt_dict):
     return the_node
 
 
-def loop_finder(pt_dict, connections_dict, start_pt_ID=None):
+def loop_finder(pt_dict, connections_dict, start_pt_ID=None, print_points=False):
     """Returns a list containing 
     a closed loop of connected points
     
@@ -185,6 +186,16 @@ def loop_finder(pt_dict, connections_dict, start_pt_ID=None):
         pt0_ID = start_pt_ID
     else:
         pt0_ID = min_x_pt(pt_dict)
+    
+    # do not shrink connections_dict to limit it to nodes in pt_dict 
+
+    if print_points:
+        #print('input types:', type(pt_dict), type(connections_dict))
+        #print('connections_dict:\n', connections_dict)
+        pt_set = set(pt_dict.keys())
+        conn_set = set(sum([[k] + list(v) for k, v in connections_dict.items()],[]))
+        #print('Points in connections_dict', [[k] + list(v) for k, v in connections_dict.items()])
+        print('# Number of points missing from pt_dict:', len(conn_set - pt_set))
         
     theta = 0
     
@@ -192,8 +203,11 @@ def loop_finder(pt_dict, connections_dict, start_pt_ID=None):
     old_ID = None
     pt_ID = pt0_ID
     while True:
+        # This is a process that walks through the node network until it gets
+        # back to the start (which is why it is a 'while', not a 'for').
         connected_node_IDs = connections_dict.get(pt_ID, [])
         node_IDs = [node_ID for node_ID in connected_node_IDs if node_ID != old_ID]
+        node_IDs = [node_ID for node_ID in node_IDs if node_ID in pt_dict]
         pt_coords = pt_dict.get(pt_ID)
         if len(node_IDs) == 0 and pt_ID == pt0_ID:
             loop_ID_list = [pt0_ID]
@@ -204,6 +218,10 @@ def loop_finder(pt_dict, connections_dict, start_pt_ID=None):
             theta = angfix(theta + pi) # 180deg reversed
         else:
             # note that this does not currently handle situations where beams have zero length
+            try:
+                node_coords = [subND(pt_dict.get(node_ID), pt_coords) for node_ID in node_IDs] # relative vectors
+            except:
+                print(node_IDs, '\n', [pt_dict.get(node_ID) for node_ID in node_IDs], '\n', pt_coords)
             node_coords = [subND(pt_dict.get(node_ID), pt_coords) for node_ID in node_IDs] # relative vectors
             # convert to polar coordinates (assigning high angle if magnitude is zero)
             polar_coords = [cart2cyl(coords, 9 * pi) for coords in node_coords] # polar coordinates
@@ -304,12 +322,12 @@ def self_intersections(line_list, is_sorted=False, is_inclusive=False):
 def line_interpolate_y(line, x):
     """Interpolates y values on a line when given x
     To avoid duplicate hits for nodes level with the 
-    joints between lines, the start of a line is not 
+    joints between lines, the end of a line is not 
     considered an intersection."""
-    #if line[0][0] == x:
-    #    return line[0][1]
-    if line[1][0] == x:
-        return line[1][1]
+    if line[0][0] == x:
+        return line[0][1]
+    #if line[1][0] == x:
+    #    return line[1][1]
     elif (line[0][0] < x < line[1][0]) and ((line[1][0] - line[0][0]) != 0):
         return line[0][1] + (x - line[0][0]) * (line[1][1] - line[0][1]) / (line[1][0] - line[0][0])
     else:
@@ -317,11 +335,21 @@ def line_interpolate_y(line, x):
 
 
 def nodes_outside_loop(node_coord_dict, pt_loop):
-    """Returns a list of nodes outside a loop
-    Note that the loop must be closed"""
-    #coord_loop = [node_coord_dict.get(pt) for pt in pt_loop]
-    line_loop = [(node_coord_dict.get(pt1), node_coord_dict.get(pt2)) 
-        for pt1, pt2 in zip(pt_loop[:-1], pt_loop[1:])]
+    """Returns a dictionary containing the list of nodes 
+    outside and inside a loop
+    node_coord_dict = {'N1': (5,8,1), 'N2': (9,-1,4), ...}
+    pt_loop = ['N1', 'N4', ..., 'N1']
+    Note:
+        1. that node_coord_dict is the list of nodes considered
+        2. that the loop must be closed"""
+    
+    coord_loop = [node_coord_dict.get(pt) for pt in pt_loop]
+    loop_xmin = min(x for x, *_ in coord_loop)
+    loop_xmax = max(x for x, *_ in coord_loop)
+    #print('x_minmax', loop_xmin, loop_xmax)
+
+    line_loop = [(pt1, pt2) for pt1, pt2 
+            in zip(coord_loop[:-1], coord_loop[1:])]
     
     # Sort the lines and points based on the x-axis
     sorted_line_list = sorted((pt1, pt2) if pt1[0] < pt2[0] else (pt2, pt1) 
@@ -330,42 +358,79 @@ def nodes_outside_loop(node_coord_dict, pt_loop):
     sorted_point_list = sorted((coords[0], coords[1], ID) 
             for ID, coords in node_coord_dict.items())
     
+    #print('sorted_point_list', sorted_point_list)
+    #print()
+    #print('sorted_line_list', sorted_line_list)
+
     line_gen = (line for line in sorted_line_list)
     #point_gen = (point for point in sorted_point_list)
 
+    line = next(line_gen)
     line_stack = []
+    inside_nodes = []
     outside_nodes = []
     # iterate over the nodes in the list
     for node in sorted_point_list:
+        #print('____\nnode', node)
+        node_x, node_y, nodeID = node
+        
+        # No need to check nodes that are below 
+        # or above the loop
+        if node_x < loop_xmin:
+            outside_nodes.append(nodeID)
+            continue
+        elif node_x > loop_xmax:
+            outside_nodes.append(nodeID)
+            continue
+        
         if node[2] in pt_loop:  # ignore nodes in loop 
             continue
-        x_node, y_node, nodeID = node
-        # trim stack
-        line_stack = [line for line in line_stack if line[1][0] > x_node]
         
-        while True:
-            try:
+        # tidy stack - only keep lines with end_x > node_x
+        if len(line_stack) > 0:
+            line_stack = [line for line in line_stack if line[1][0] > node_x]
+        
+        while line is not None:
+            # try adding lines to line_stack
+            # check whether line is ahead of node 
+            # and whether line is vertical
+            start_x = line[0][0]
+            end_x = line[1][0]
+            if (start_x <= node_x <= end_x) and (start_x != end_x):
+                line_stack.append(line)
+            elif start_x > node_x: # 
+                break # do not replace, wait
+            
+            try:     # get new line
                 line = next(line_gen)
             except StopIteration:
-                break
-            # check whether line still covers node 
-            if line[0][0] < x_node <= line[1][0]:
-                line_stack.append(line)
-            elif line[0][0] > x_node:
+                line = None
                 break
         
-        # TODO
-        if len(line_stack) == 0:
-            break
+        """print(node)
+        print('\nline_stack')
+        [print(line) for line in line_stack]
+        print()"""
+
         # check node against limits - how many crossings
-        y_values = [line_interpolate_y(line, x_node) for line in line_stack]
-        if sum(y for y in y_values if y >= y_node if y is not None) % 2 == 0:
+        #print(f'Check {nodeID}')
+        y_values = [line_interpolate_y(line, node_x) for line in line_stack]
+        count_above_node_y = sum(1 for y in y_values  if ((y is not None) and (y >= node_y)))
+        """if nodeID in [(86, 'ROOF'), (89, 'ROOF'), (98, 'ROOF'), (101, 'ROOF')]:
+            print(f'ID: {nodeID} ({node_x}, {node_y}), count: {count_above_node_y} | ')
+            print('y-values = ', (node_y, y_values))
+            print('line_stack = ', line_stack)"""
+        if count_above_node_y % 2 == 0:
             outside_nodes.append(nodeID)
-        
-    return outside_nodes
+        else:
+            inside_nodes.append(nodeID)
+    
+    #print('pt_loop')
+    #[print(pt) for pt in zip(coord_loop, pt_loop)]
+    return {'outside': outside_nodes, 'inside': inside_nodes}
         
     
-def all_loops_finder(pt_dict, connections_dict, sort_points=True):
+def all_loops_finder(pt_dict, connections_dict, sort_points=True, print_points=False):
     """Returns a list containing 
     a closed loop of connected points"""
 
@@ -374,20 +439,37 @@ def all_loops_finder(pt_dict, connections_dict, sort_points=True):
     # Sort the pt_dict according to x
     if sort_points:
         pt_dict = {k:v for v, k in sorted([(v, k) for k, v in pt_dict.items()])}
-        
-
+    
     loops_list = []
 
+    i = 0
     while True:
+        i += 1
+        # 
+        if len(pt_dict) == 0:
+            break
         if sort_points:
             first_point_ID = list(pt_dict)[0]
-        loop = loop_finder(pt_dict, connections_dict, first_point_ID)
+        
+        loop = loop_finder(pt_dict, connections_dict, first_point_ID, print_points=print_points)
+        if print_points:
+            print(f'# loop {i}: ', loop)
+            print(f'loop_{i} = ', [pt_dict.get(pt) for pt in loop])
+
         if len(loop) == 1:
             pt_dict.pop(loop[0])
             if len(pt_dict) == 0:
+                print(f'{i}: only one item in loop')
                 break
         elif len(loop) > 1:
-            outside_nodes = nodes_outside_loop(pt_dict, loop)
+            inside_outside_nodes = nodes_outside_loop(pt_dict, loop)
+            inside_nodes = inside_outside_nodes['inside']
+            outside_nodes = inside_outside_nodes['outside']
+            if print_points:
+                #print(f'{i}: outside ', outside_nodes)
+                print(f'outside_{i} = ', [pt_dict.get(pt) for pt in outside_nodes])
+                #print(f'{i}: inside ', inside_nodes)
+                print(f'inside_{i} = ', [pt_dict.get(pt) for pt in inside_nodes])
             loops_list.append(loop)
             if len(outside_nodes) > 0:                
                 pt_dict = {k:v for k, v in pt_dict.items() if k in outside_nodes}
@@ -398,4 +480,5 @@ def all_loops_finder(pt_dict, connections_dict, sort_points=True):
                 print(f'Something has gone wrong in loop finding...')
                 print(f'{len(pt_dict)} nodes are still in pt_dict')
             break
+    
     return loops_list
