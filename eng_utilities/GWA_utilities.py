@@ -379,10 +379,12 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
         ('POINT SPRING PROPERTIES', 'POINTSPRING'),
     )]
 
-    STORY_dict, DIAPHRAGMS_dict, DIAPHRAGM_GROUPS_dict = [E2K_dict.get(k1,{}).get(k2,{}) for k1, k2 in (
+    STORY_dict, DIAPHRAGMS_dict, DIAPHRAGM_GROUPS_dict, DIAPHRAGM_LOOPS_dict = [
+        E2K_dict.get(k1,{}).get(k2,{}) for k1, k2 in (
         ('STORIES - IN SEQUENCE FROM TOP', 'STORY'),
         ('DIAPHRAGM NAMES', 'DIAPHRAGM'),
-        ('DIAPHRAGM NAMES', 'GROUPS'))]
+        ('DIAPHRAGM NAMES', 'GROUPS'),
+        ('DIAPHRAGM NAMES', 'LOOPS'))]
     
     NODE_dict, LINE_dict, AREA_dict = [E2K_dict.get(k1,{}).get(k2,{}) for k1, k2 in (
         ('POINT ASSIGNS', 'POINTASSIGN'), 
@@ -765,8 +767,54 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
                 gwa.write('\t'.join(ostr) + '\n')
 
         
+        # =================================
+        # =====  Diaphragm Polylines  =====
+        # =================================
         # POLYLINE | num | name | colour | grid_plane | num_dim | desc
-        # STORY_dict
+        
+        # MEMB.8 | num | name | colour | type (2D) | exposure | prop | group | topology | node | angle | mesh_size | is_intersector 
+        #  | analysis_type | fire | limiting_temperature | time[4] | dummy 
+        #  | off_z | off_auto_internal | reinforcement2d |
+        # MEMB.8	1	fred	NO_RGB	SLAB	ALL	1	1	node_list	0	0	0	YES	
+        # 	LINEAR	0	0	0	0	0	0	ACTIVE	0	NO	REBAR_2D.1	0.03	0.03	0
+        
+        el_max = len(LINE_dict) + len(AREA_dict) + 10
+        p_max = len(SHELL_PROPS_dict) + 1
+        
+        #pline_i = 1
+        perim_i = 1
+        
+        # for story_name, sdict in STORY_dict.items():
+        for story_name in STORY_dict.keys():
+            
+            # Generate slab "member" to represent the perimeter of a beam mesh
+            loop_list = [[NODE_dict[node]['ID'] for node in loop] 
+                    for loop in DIAPHRAGM_LOOPS_dict.get(story_name, [])]
+            #print(perimeter)
+            loop_strings = [' '.join([str(n) for n in loop if n is not None]) for loop in loop_list]
+            print(f'loop_string ({story_name}): ', loop_strings)
+        
+            for j, loop_string in enumerate(loop_strings):
+                pname = f'Perimeter {j+1} @ {story_name}'
+                # MEMB.8	1	fred	NO_RGB	SLAB	ALL	1	1	node_list	0	0	0	YES
+                ostr = [str(val) for val in ['MEMB.8', el_max + perim_i , pname, 'NO_RGB', 'SLAB', 'ALL', p_max, 1, loop_string]]
+                gwa.write('\t'.join(ostr) + '\n')
+                perim_i += 1
+            
+            # Alternative representation using polylines
+            """polylines = [[NODE_dict[node]['COORDS'] for node in loop] 
+                    for loop in DIAPHRAGM_LOOPS_dict.get(story_name, [])]
+            #print(story_name, )
+        
+            for j, polyline in enumerate(polylines):
+                pname = f'Perimeter {j+1} @ {story_name}'
+                pline_string = ''.join([str(p) for p in polyline]) #.replace(' ','')
+                ostr = [str(val) for val in ['POLYLINE', pline_i, pname, 'NO_RGB', pline_i, 3, pline_string]]
+                gwa.write('\t'.join(ostr) + '\n')
+                pline_i += 1"""
+            
+            
+
 
 
         # ========================
