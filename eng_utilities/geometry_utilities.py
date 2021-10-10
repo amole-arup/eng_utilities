@@ -1,4 +1,4 @@
-""""""
+"""Utilities for geometry defined by tuples or lists of numbers"""
 
 from math import pi, sin, cos, tan, atan, atan2, asin, acos, exp, log, log10
 from functools import reduce
@@ -264,21 +264,115 @@ def addND(v1, v2):
     return [vv1 + vv2 for vv1, vv2 in zip(v1, v2)]
 
 
+def addNDx(v1, v2, limit=0):
+    """Adds two nD vectors together, itemwise,
+    ignoring items if they are not numeric, and also 
+    an option to limit length of tuples to a certain 
+    length defined by the `limit` argument"""
+    if limit > 0:
+        return [vv1 +vv2 for i, (vv1, vv2) in enumerate(zip(v1, v2)) 
+        if (isinstance(vv1, (int, float)) 
+            and isinstance(vv2, (int, float))
+            and i < limit)]
+    else:
+        return [vv1 + vv2 for vv1, vv2 in zip(v1, v2) 
+        if (isinstance(vv1, (int, float)) and isinstance(vv2, (int, float)))]
+
+
 def subND(v1, v2):
     """Subtracts two nD vectors together, itemwise"""
     return [vv1 - vv2 for vv1, vv2 in zip(v1, v2)]
 
 
+def subNDx(v1, v2, limit=0):
+    """Subtracts two nD vectors together, itemwise,
+    ignoring items if they are not numeric, and also 
+    an option to limit length of tuples to a certain 
+    length defined by the `limit` argument"""
+    if limit > 0:
+        return [vv1 - vv2 for i, (vv1, vv2) in enumerate(zip(v1, v2)) 
+        if (isinstance(vv1, (int, float)) 
+            and isinstance(vv2, (int, float))
+            and i < limit)]
+    else:
+        return [vv1 - vv2 for vv1, vv2 in zip(v1, v2) 
+        if (isinstance(vv1, (int, float)) and isinstance(vv2, (int, float)))]
+
+
+def mulND(v1, v2):
+    """Returns product of two nD vectors
+    (same as itemwise multiplication)"""
+    return [vv1 * vv2 for vv1, vv2 in zip(v1, v2)]
+
+
+def mulNDx(v1, v2, limit=0):
+    """Multiplies two nD vectors together, itemwise,
+    ignoring items if they are not numeric, and also 
+    an option to limit length of tuples to a certain 
+    length defined by the `limit` argument"""
+    if limit > 0:
+        return [vv1 * vv2 for i, (vv1, vv2) in enumerate(zip(v1, v2)) 
+        if (isinstance(vv1, (int, float)) 
+            and isinstance(vv2, (int, float))
+            and i < limit)]
+    else:
+        return [vv1 * vv2 for vv1, vv2 in zip(v1, v2) 
+        if (isinstance(vv1, (int, float)) and isinstance(vv2, (int, float)))]
+
+
+def divND(v1, v2):
+    """Returns divisor of two nD vectors
+    (same as itemwise multiplication)
+    Note that this does not catch cases 
+    where an element of the divisor is zero."""
+    return [vv1 / vv2 for vv1, vv2 in zip(v1, v2)]
+
+
+def divNDx(v1, v2, limit=0):
+    """Returns itemwise divisor two nD vectors, 
+    ignoring items if they are not numeric, and also 
+    an option to limit length of tuples to a certain 
+    length defined by the `limit` argument
+    Note that this does not catch cases 
+    where an element of the divisor is zero."""
+    if limit > 0:
+        return [vv1 * vv2 for i, (vv1, vv2) in enumerate(zip(v1, v2)) 
+        if (isinstance(vv1, (int, float)) 
+            and isinstance(vv2, (int, float))
+            and i < limit)]
+    else:
+        return [vv1 * vv2 for vv1, vv2 in zip(v1, v2) 
+        if (isinstance(vv1, (int, float)) and isinstance(vv2, (int, float)))]
+
+
 def dotND(v1, v2):
     """Returns dot product of two nD vectors
-    (same as itemwise multiplication)"""
+    (same as itemwise multiplication followed by summation)."""
     return sum(vv1 * vv2 for vv1, vv2 in zip(v1, v2))
 
 
 def scaleND(v, s):
-    """Scales an nD vector by a factor s"""
+    """Scales an nD vector by a factor s."""
     return [s * vv for vv in v]
 
+
+def scaleNDx(v, s, limit=0):
+    """Multiplies two nD vectors together, itemwise,
+    ignoring items if they are not numeric, and also 
+    an option to limit length of tuples to a certain 
+    length defined by the `limit` argument"""
+    if limit > 0:
+        return [s * vv for i, vv in enumerate(v) 
+        if (isinstance(v, (int, float)) 
+            and i < limit)]
+    else:
+        return [s * vv for i, vv in enumerate(v) 
+        if isinstance(v, (int, float))]
+
+
+# ================================
+# ==== Matrix Manipulations ======
+# ================================
 
 def Madd(M1, M2):
     """Matrix addition (elementwise)"""
