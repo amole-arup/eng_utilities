@@ -1,6 +1,25 @@
-""""""
+"""A set of functions for lines and polylines that are defined 
+as tuples of numerical tuples. Lines are assumed to be 2-ples of n-ples
+There are also some functions that can include alphabetic keys that 
+may be present as keys in dictionaries or as elements at the end of the tuple. 
 
-from eng_utilities.geometry_utilities import *
+These include the following:
+* Properties for closed polylines
+* Identifying loops of lines (2-ples of n-ples)
+* Finding crossing lines
+
+TODO
+- intersection2D - add checks for parallel elements - identify
+    whether they are collinear and if so, do they overlap?
+- Sort out routine for identifying intersections in the XY plane
+    which is for finding secondary beams intersecting with
+    primary beams and must therefore handle IDs
+- Make sure that docstrings are consistent with Google
+    standards for automatic documentation
+- add tests
+"""
+
+from geometry_utilities import *
 from collections import namedtuple, OrderedDict
 from operator import le, lt
 
@@ -68,7 +87,9 @@ def perim_props(pt_list):
 
 
 def perim_full_props(pt_list):
-    """Calculates the geometric properties of sections defined by closed 2D polylines (FullSecProp2D).
+    """Calculates the geometric properties of sections defined by closed 2D polylines 
+    (FullSecProp2D).
+
     Inputs are:
         pt_list - a polyline defined by a list of points as 2D tuples
         centered - if True returns results for section centered at centroid (default is False)
@@ -219,10 +240,10 @@ def loop_finder(pt_dict, connections_dict, start_pt_ID=None, print_points=False)
         else:
             # note that this does not currently handle situations where beams have zero length
             try:
-                node_coords = [subND(pt_dict.get(node_ID), pt_coords) for node_ID in node_IDs] # relative vectors
+                node_coords = [subNDx(pt_dict.get(node_ID), pt_coords) for node_ID in node_IDs] # relative vectors
             except:
                 print(node_IDs, '\n', [pt_dict.get(node_ID) for node_ID in node_IDs], '\n', pt_coords)
-            node_coords = [subND(pt_dict.get(node_ID), pt_coords) for node_ID in node_IDs] # relative vectors
+            node_coords = [subNDx(pt_dict.get(node_ID), pt_coords) for node_ID in node_IDs] # relative vectors
             # convert to polar coordinates (assigning high angle if magnitude is zero)
             polar_coords = [cart2cyl(coords, 9 * pi) for coords in node_coords] # polar coordinates
             angles = [ang for _, ang, _ in polar_coords] # extract angles
@@ -241,7 +262,7 @@ def loop_finder(pt_dict, connections_dict, start_pt_ID=None, print_points=False)
     return loop_ID_list
 
 
-def line_intersection2D(line1, line2, is_inclusive=True):
+def line_intersection2D(line1, line2, is_inclusive=True, tol=0.01):
     """Returns a dictionary of any intersection when 
     provided with two lines (each defined as a pair of tuples).
 
@@ -270,35 +291,47 @@ def line_intersection2D(line1, line2, is_inclusive=True):
     """
     op = le if is_inclusive else lt
 
-    p1, v1 = line1[0], subND(line1[1], line1[0])
-    p2, v2 = line2[0], subND(line2[1], line2[0])
+    p1, v1 = line1[0], subNDx(line1[1], line1[0])
+    p2, v2 = line2[0], subNDx(line2[1], line2[0])
      
     denom = v1[0] * v2[1] - v1[1] * v2[0]
     if denom == 0:
         return {'type': 'parallel'}
     else:
-        crossing_type = None
         t1 = ((p1[1] - p2[1]) * v2[0] - (p1[0] - p2[0]) * v2[1]) / denom        
+        t2 = ((p1[1] - p2[1]) * v1[0] - (p1[0] - p2[0]) * v1[1]) / denom
+        
+        crossing_type = None
         if op(0, t1) and op(t1, 1):
             crossing_type = 'line1'
-        t2 = ((p1[1] - p2[1]) * v1[0] - (p1[0] - p2[0]) * v1[1]) / denom
         if op(0, t2) and op(t2, 1):
             crossing_type = 'both' if crossing_type else 'line2'
         if crossing_type is None:
             crossing_type = 'neither'
+        
+        
+        touching = []
+        if (-tol <= t2 <= tol):
+            touching.append('line2_start')
+        if ((1 - tol) <= t2 <= (1 + tol)):
+            touching.append('line2_end')
+        if (-tol <= t1 <= tol):
+            touching.append('line1_start')
+        if ((1 - tol) <= t1 <= (1 + tol)):
+            touching.append('line1_end')
         return {'intersection': addND(p1, scaleND(v1, t1)), 
-        't1': t1, 't2': t2, 'type': crossing_type,
+        't1': t1, 't2': t2, 'type': crossing_type, 'touching': touching,
         }
     
 
-def self_intersections(line_list, is_sorted=False, is_inclusive=False):
+def self_intersections(line_list, is_sorted=False, is_inclusive=False, tol = 0.01):
     """Calculates self intersections using a sweep algorithm
     along the x-axis.
     
     line_list is a list of lines defined as pairs of tuples"""
     if is_sorted == False:
-        sorted_list = sorted((pt1, pt2) if pt1[0] < pt2[0] else (pt2, pt1) 
-            for pt1, pt2 in line_list)
+        sorted_list = sorted((pt1, pt2, *tail) if pt1[0] < pt2[0] else (pt2, pt1, *tail) 
+            for pt1, pt2, *tail in line_list)
     else:
         sorted_list = list(line_list)
     
@@ -311,7 +344,7 @@ def self_intersections(line_list, is_sorted=False, is_inclusive=False):
         for line2 in line_stack:
             if line2[1][0] >= x:
                 next_stack.append(line2)
-                crossing = line_intersection2D(line, line2, is_inclusive)
+                crossing = line_intersection2D(line, line2, is_inclusive, tol=tol)
                 if crossing['type'] == 'both':
                     cross_list.append(crossing['intersection'])
         line_stack = next_stack.copy()
@@ -482,3 +515,42 @@ def all_loops_finder(pt_dict, connections_dict, sort_points=True, print_points=F
             break
     
     return loops_list
+
+
+def main():
+    lines2D = (
+        ((6,3), (1,4), 'A'), ((2,2), (3,4), 'B'), 
+        ((4,1), (0,3), 'C'), ((0,-1), (1,1), 'D'), 
+        ((5,1), (7,2), 'E'), ((3,4), (5,5), 'F'), 
+        ((1,0), (6,5), 'G')
+        )
+    lines2Da = (
+        ((6,3,'a1'), (1,4,'a2'), 'A'), ((2,2,'b1'), (3,4,'b2'), 'B'), 
+        ((4,1,'c1'), (0,3,'c2'), 'C'), ((0,-1,'d1'), (1,1,'d2'), 'D'), 
+        ((5,1,'e1'), (7,2,'e2'), 'E'), ((3,4,'f1'), (5,5,'f2'), 'F'), 
+        ((1,0,'g1'), (6,5,'g2'), 'G')
+        )
+    z = 2
+    lines3D = [((line[0][0], line[0][1], z), 
+                (line[1][0], line[1][1], z), 
+                line[2]) 
+                for line in lines2D]
+    lines3Da = [((line[0][0], line[0][1], z, line[0][2]), 
+                (line[1][0], line[1][1], z, line[1][2]), 
+                line[2]) 
+                for line in lines2Da]
+    lines3Db = [(((line[0][0], line[0][1], z), line[0][2]), 
+                ((line[1][0], line[1][1], z), line[1][2]), 
+                line[2]) 
+                for line in lines2Da]
+    print('Lines3D:', lines3D)
+    print(self_intersections(lines3D, is_inclusive=True))
+    print('Lines3Da:', lines3Da)
+    #print(self_intersections(lines3Da, is_inclusive=True))
+    print('Lines3Db:', lines3Db)
+    #print(self_intersections(lines3Da, is_inclusive=True))
+
+
+
+if __name__ == "__main__":
+    main()
