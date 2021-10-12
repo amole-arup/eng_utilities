@@ -19,7 +19,7 @@ TODO
 - add tests
 """
 
-from geometry_utilities import *
+from eng_utilities.geometry_utilities import *
 from collections import namedtuple, OrderedDict
 from operator import le, lt
 
