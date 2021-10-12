@@ -507,6 +507,7 @@ def run_all(E2K_model_path, get_pickle=False, **kwargs):
     debug = kwargs.get('Debug', False)
     
     pickle_path = splitext(E2K_model_path)[0] + '.pkl'
+    pickle_path_2 = splitext(E2K_model_path)[0] + '_2.pkl'
     
     if exists(pickle_path) and get_pickle == True:
         E2K_dict = pickle.load(open(pickle_path, 'rb'))
@@ -516,6 +517,8 @@ def run_all(E2K_model_path, get_pickle=False, **kwargs):
     
     process_E2K_dict(E2K_dict)
     
+    pickle.dump(E2K_dict, open(pickle_path_2, 'wb'))
+
     if debug:
         for k,v in E2K_dict.items():
             print(k)
@@ -532,3 +535,22 @@ def run_all(E2K_model_path, get_pickle=False, **kwargs):
     return E2K_dict
     
 
+def main():
+    """directory_listing = listdir(f'..\samples')
+    e2k_list = [join(f'..\samples', fl) for fl in directory_listing if (fl.casefold().endswith('e2k') or fl.casefold().endswith('$et'))]
+    [print(e2k) for e2k in e2k_list] ;# Read in the E2K text file
+    #E2K_path = r'..\samples\SBVC_kipin_722_00.e2k'
+    E2K_path = r'..\samples\Shaw_Nmm_2017_ULS.e2k'
+    #E2K_path = r'..\samples\cw1_kNm_722_01.e2k'
+    #E2K_dict = E2KtoDict(E2K_path)
+    #E2K_dict = run_all(E2K_path, get_pickle=False, Debug=True)
+    E2K_dict = run_all(E2K_path, get_pickle=False, Debug=False)
+    #E2K_dict = run_all(E2K_path, get_pickle=True) 
+
+    pkl2_file = E2K_path.replace(".e2k","_2.pkl").replace(".$et","_2.pkl").replace(".E2K","_2.pkl").replace(".$ET","_2.pkl")
+    print(f'\n=== Use these lines to import the model data: ===')
+    print(f'import pickle')
+    print(f'E2K_dict = pickle.load(open({pkl2_file}, "rb")') """
+
+if __name__ == "__main__":
+    main()
