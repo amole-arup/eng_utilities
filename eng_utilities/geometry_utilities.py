@@ -24,6 +24,15 @@ def mag2D(v2D):
     return (v2D[0]**2 + v2D[1]**2)**0.5
 
 
+def unit2D(v):
+    """Returns the unit 2D vector in the same direction 
+    as the input 2D vector (as one 2-tuple)"""    
+    if mag2D(v) == 0.0 :
+        raise ValueError('Vector should have non-zero magnitude')
+    else:
+        return scale2D(v, 1.0 / mag2D(v))
+
+
 def ang2D(pt):
     """Returns the anti-clockwise angle of the 
     vector from the x-axis (in radians)"""
@@ -253,10 +262,27 @@ def magND(v):
     return sum(vv*2 for vv in v) ** 0.5
 
 
+def magNDx(v, limit=0):
+    """Returns magnitude of an nD vector,
+    ignoring items if they are not numeric, with 
+    an option to limit length of the tuple to a certain 
+    length defined by the `limit` argument"""
+    if limit > 0:
+        return sum(vv**2  for i, vv in enumerate(v)
+        if (isinstance(vv, (int, float)) 
+            and i < limit))**0.5
+    else:
+        return sum(vv**2  for i, vv in enumerate(v)
+        if (isinstance(vv, (int, float))))**0.5
+
+
 def unitND(v):
-    """Returns a unit vector in the same direction"""
-    s = magND(v)
-    return [s * vv for vv in v]
+    """Returns the unit nD vector in the same direction 
+    as the input nD vector (as one 3-tuple)"""    
+    if magND(v) == 0.0 :
+        raise ValueError('Vector should have non-zero magnitude')
+    else:
+        return scaleND(v, 1.0 / magND(v))
 
 
 def addND(v1, v2):
@@ -266,11 +292,11 @@ def addND(v1, v2):
 
 def addNDx(v1, v2, limit=0):
     """Adds two nD vectors together, itemwise,
-    ignoring items if they are not numeric, and also 
+    ignoring items if they are not numeric, with 
     an option to limit length of tuples to a certain 
     length defined by the `limit` argument"""
     if limit > 0:
-        return [vv1 +vv2 for i, (vv1, vv2) in enumerate(zip(v1, v2)) 
+        return [vv1 + vv2 for i, (vv1, vv2) in enumerate(zip(v1, v2)) 
         if (isinstance(vv1, (int, float)) 
             and isinstance(vv2, (int, float))
             and i < limit)]
@@ -286,7 +312,7 @@ def subND(v1, v2):
 
 def subNDx(v1, v2, limit=0):
     """Subtracts two nD vectors together, itemwise,
-    ignoring items if they are not numeric, and also 
+    ignoring items if they are not numeric, with 
     an option to limit length of tuples to a certain 
     length defined by the `limit` argument"""
     if limit > 0:
@@ -307,7 +333,7 @@ def mulND(v1, v2):
 
 def mulNDx(v1, v2, limit=0):
     """Multiplies two nD vectors together, itemwise,
-    ignoring items if they are not numeric, and also 
+    ignoring items if they are not numeric, with 
     an option to limit length of tuples to a certain 
     length defined by the `limit` argument"""
     if limit > 0:
@@ -330,7 +356,7 @@ def divND(v1, v2):
 
 def divNDx(v1, v2, limit=0):
     """Returns itemwise divisor two nD vectors, 
-    ignoring items if they are not numeric, and also 
+    ignoring items if they are not numeric, with 
     an option to limit length of tuples to a certain 
     length defined by the `limit` argument
     Note that this does not catch cases 
