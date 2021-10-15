@@ -9,10 +9,12 @@ import sqlite3
 from os.path import exists
 from dateutil.parser import parse
 
-from eng_utilities.general_utilities import is_numeric, try_numeric, units_conversion_factor
+from eng_utilities.general_utilities import Units, is_numeric, try_numeric, units_conversion_factor
 from eng_utilities.geometry_utilities import *
 from eng_utilities.E2K_section_utilities import cardinal_points_offsets
 
+### Units from general utilities
+#Units = namedtuple('Units', 'force length temperature')
 
 
 ## ====================
@@ -262,6 +264,9 @@ def set_offsets(offsets, offset_sys = None, cy = 0, cz = 0):
 GSA_mass_dict = {
     ('N', 'm'): 'kg', ('kN', 'm'): 't', ('MN', 'm'): 'kt',
     ('N', 'mm'): 't', ('kN', 'mm'): 'kt',
+    ('kgf', 'mm'): 'kg', ('tonf', 'mm'): 't',
+    ('kgf', 'cm'): 'kg', ('tonf', 'cm'): 't',
+    ('kgf', 'm'): 'kg', ('tonf', 'm'): 't',
     ('lb', 'in'): 'lb', ('kip', 'in'): 'kip', 
     ('lb', 'ft'): 'lb', ('kip', 'ft'): 'kip',
 }
@@ -275,6 +280,9 @@ GSA_pressure_dict = {
     ('N', 'm'): 'Pa', ('kN', 'm'): 'kPa', ('MN', 'm'): 'MPa',
     ('N', 'cm'): 'N/cm²', ('kN', 'cm'): 'kN/cm²',
     ('N', 'mm'): 'MPa', ('kN', 'mm'): 'GPa',
+    ('kgf', 'm'): 'kgf/m²', ('tonf', 'm'): 'tonf/cm²',
+    ('kgf', 'cm'): 'kgf/cm²', ('tonf', 'cm'): 'tonf/cm²',
+    ('kgf', 'mm'): 'kgf/mm²', ('tonf', 'mm'): 'tonf/cm²',
     ('lb', 'in'): 'psi', ('kip', 'in'): 'ksi', 
     ('lb', 'ft'): 'psf', ('kip', 'ft'): 'ksf',
 }
@@ -359,6 +367,7 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
     # =================================
     
     units = E2K_dict['UNITS']
+    print(f'Units are {units}')
     grav_dict = {'m': 9.80665, 'cm': 980.665, 'mm': 9806.65, 'in': 32.2, 'ft': 386.4}
     grav = grav_dict.get(units.length, 9.81)
     force_factor = units_conversion_factor(('N', units.force))
@@ -370,7 +379,10 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
     #print('F units:', units.force, force_factor, ', L units:', units.length, length_factor)
     #print('S units:', stress_units, stress_factor, ', M units:', mass_units, mass_factor)
     #print('T units:', "\xb0" + units.temperature, 1.0, '\n')
-
+    if units.force not in ('N', 'kN', 'MN', 'lb', 'ton'):
+        print(f'**Non-standard units**: \nCheck derived unit and factors based on {units}:')
+        print(f'\tStress units: {stress_units}, {stress_factor}\n\tMass units: {mass_units}, {mass_factor}')
+    
     MAT_PROPS_dict, FRAME_PROPS_dict, SHELL_PROPS_dict, SPRING_PROPS_dict = [
         E2K_dict.get(k1,{}).get(k2,{}) for k1, k2 in (
         ('MATERIAL PROPERTIES', 'MATERIAL'), 
@@ -431,7 +443,7 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
         gwa.write(r'!    and the global forces).' + '\n')
         gwa.write(r'!' + '\n')
         #   TITLE | title | sub-title | calc | job_no | initials
-        gwa.write('\t'.join(['TITLE.1', title1, title2, '', '', '', '', '\n']))
+        gwa.write('\t'.join(['TITLE.1', str(title1), str(title2), '', '', '', '', '\n']))
         
         gwa.write('\t'.join(['UNIT_DATA.1', 'FORCE', units.force, 
                              str(force_factor)]) + '\n')
@@ -482,6 +494,8 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
         # PROP_SEC.1 | num | name | colour | anal | desc | prin | type | cost |
         # PROP_SEC.2 | num | name | colour | type | desc | anal | mat | grade |
         # PROP_SEC.3 | num | name | colour | mat | grade | anal | desc | cost | ref_point | off_y | off_z |
+        # SECTION_MOD | ref | name | mod | centroid | stress | opArea | area | prin 
+        #   | opIyy | Iyy | opIzz | Izz | opJ | J | opKy | ky | opKz | kz | opVol | vol | mass
         # ** Creating Properties Database and writing to GWA **
         mat_types = ['GENERIC', 'STEEL', 'CONCRETE', 'ALUMINIUM', 'GLASS', 'FRP', 'TIMBER']
         for fp_name, fp_dict in FRAME_PROPS_dict.items():
@@ -645,6 +659,7 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
         # EL.2 | num | name | colour | type | prop | group | topo() | orient_node | orient_angle | is_rls { | rls { | k } } is_offset { | ox | oy | oz } | dummy
         # EL.4  1       NO_RGB  BEAM    1   1   1   2   0   0   NO_RLS  0   0   0   0
         # ** Writing Beams to GWA **
+        memb_i = 1
         for sh_name, sh_dict in AREA_dict.items():
             sh_ID = sh_dict.get('ID', '')
             num_pts = sh_dict.get('NumPts')
@@ -671,9 +686,16 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
                     prop_num, prop_num, nodes_string]
                 gwa.write('\t'.join([str(val) for val in ostr]) + '\n')
             else:
-                # TODO: may want to create members with polylines > quads
-                #el_type = None
-                pass
+                # Create polygonal members for n-gon with n > 4 
+                el_type = 'SLAB'
+                el_name, story_name = sh_name
+                pname = f'Shell {el_name} (ID: {sh_ID}) @ {story_name}'
+                # MEMB.8	1	fred	NO_RGB	SLAB	ALL	1	1	node_list	0	0	0	YES
+                ostr = [str(val) for val in ['MEMB.8', memb_i , pname, 'NO_RGB', el_type, 'ALL', prop_num, 1, nodes_string.replace('\t', ' ')]]
+                gwa.write('\t'.join(ostr) + '\n')
+                memb_i += 1
+        
+        memb_max = memb_i
         
         
         # =======================
@@ -782,7 +804,7 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
         p_max = len(SHELL_PROPS_dict) + 1
         
         #pline_i = 1
-        perim_i = 1
+        perim_i = memb_max + 1
         
         # for story_name, sdict in STORY_dict.items():
         for story_name in STORY_dict.keys():
@@ -792,7 +814,7 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
                     for loop in DIAPHRAGM_LOOPS_dict.get(story_name, [])]
             #print(perimeter)
             loop_strings = [' '.join([str(n) for n in loop if n is not None]) for loop in loop_list]
-            print(f'loop_string ({story_name}): ', loop_strings)
+            #print(f'loop_string ({story_name}): ', loop_strings)
         
             for j, loop_string in enumerate(loop_strings):
                 pname = f'Perimeter {j+1} @ {story_name}'
@@ -949,6 +971,210 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10):
         
         # ** Writing Load Combinations to GWA **
         # COMBINATION | case | name | desc | bridge | note
+        # LOAD_COMBO_dict
 
         gwa.write('END\n')
 
+
+# =======================================
+# =============== Standalone ==============
+
+def write_GWA_model(
+    GWApath = 'delme.gwa', 
+    node_list = [],
+    line_list = [],
+    NODE_dict = {}, 
+    LINE_dict = {}, 
+    FRAME_PROPS_dict={},
+    SPRING_PROPS_dict = {},
+    AREA_dict = {}, 
+    SHELL_PROPS_dict={},
+    units = Units('N', 'm', 'C')
+    ):
+    """
+    Quick write:
+        node_list = [(1, 2.3, 3.2, 1.1), (2, 3.4, 7.1, 1.1), ...]
+        line_list = [(2, 1, 2), (4, 2, 3), ...]
+        OR
+        node_list = [('N1', 2.3, 3.2, 1.1), ('N2', 3.4, 7.1, 1.1), ...]
+        line_list = [('B2', 'N1', 'N2'), ('B4', 'N2', 'N3'), ...]
+    NODE_dict key = node name / number, contains keys: 'ID', 'COORDS'
+    LINE_dict key = beam node / number, contains keys: 'ID', 'N1, 'N2', ['prop_ID']
+    """
+    if node_list and not NODE_dict:
+        for i, (id, x, y, z) in enumerate(node_list):
+            if is_numeric(id):
+                NODE_dict[id] = {'ID': id, 'COORDS': (x,y,z)}
+            else:
+                NODE_dict[id] = {'ID': i+1, 'COORDS': (x,y,z)}
+    
+    if line_list and not LINE_dict:
+        for i, (id, n1, n2, *args) in enumerate(line_list):
+            if len(args) > 1:
+                p_ID = args[0]
+            else:
+                p_ID = 1
+            if is_numeric(id):
+                LINE_dict[id] = {'ID': id, 'N1': n1, 'N2': n2, 'prop_ID': p_ID}
+            else:
+                LINE_dict[id] = {
+                    'ID': i+1, 
+                    'N1': NODE_dict.get(n1,{}).get('ID',1), 
+                    'N2': NODE_dict.get(n2,{}).get('ID',1)}
+                print(LINE_dict[id])
+
+    with open(GWApath, 'w') as gwa:
+        # ** Writing initial lines to GWA **
+        # NB "\xb0", "\xb2", "\xb3" are degree sign, squared and cubed symbols
+        gwa.write(r'! This file was originally written by a Python script by the E2KtoJSON_code library' + '\n')
+
+        if NODE_dict:
+            write_node(gwa, NODE_dict, SPRING_PROPS_dict)
+
+        if LINE_dict:
+            write_beam(gwa, LINE_dict, FRAME_PROPS_dict, units=units)
+        
+        if AREA_dict:
+            write_shells(gwa, AREA_dict, SHELL_PROPS_dict, bm_max=len(LINE_dict))
+
+        gwa.write('END\n')
+    if exists(GWApath):
+        print(f'{GWApath} written')
+
+
+def write_node(gwa, NODE_dict, SPRING_PROPS_dict={}):
+    """
+    'ID', 'NAME', 'COORDS', 'RESTRAINT', 
+    """
+    # =======================
+    # =====    Nodes    =====
+    # =======================
+    # POINTASSIGN  "3895"  "BASE"  RESTRAINT "UX UY"  SPRINGPROP "PSpr1"  DIAPH "S1FLEX"
+    # NODE.2 | num | name | colour | x | y | z | is_grid { | grid_plane | datum | grid_line_a | grid_line_b } | axis | is_rest { | rx | ry | rz | rxx | ryy | rzz } | is_stiff { | Kx | Ky | Kz | Kxx | Kyy | Kzz }
+    # NODE.2    46      NO_RGB  -20.95  3.377499    33.3    NO_GRID 0   REST    1   1   1   0   0   0
+    # NODE.3 | num | name | colour | x | y | z | restraint | axis |
+    #                   mesh_size | springProperty | massProperty | damperProperty
+    # NODE.3	2	name	NO_RGB	8.5	2.3	0.1	xyzxxyy	GLOBAL	0	1
+    for i, (n_name, n_dict) in enumerate(NODE_dict.items()):
+        nid = n_dict.get('ID', try_numeric(n_name) if is_numeric(n_name) else i)
+        restr = n_dict.get('RESTRAINT', None)
+        fixity = [set_restraints(restr)] if restr else []
+        mesh_size = 0
+        spr_prop = n_dict.get('SPRINGPROP')
+        spr_ID = [SPRING_PROPS_dict.get(spr_prop,{}).get('ID')] if spr_prop else []
+        more = []
+        if spr_ID:
+            more = spr_ID + more
+        if more:
+            more = [mesh_size] + more
+        if more or fixity:
+            more = fixity + ['GLOBAL'] + more
+        coords = [str(w) for w in n_dict.get('COORDS', ('', '', ''))]
+        ostr = ['NODE.3', nid, n_name, 'NO_RGB'] + \
+            coords + more
+        gwa.write('\t'.join([str(n) for n in ostr]) + '\n')
+
+
+def write_beam(gwa, LINE_dict, FRAME_PROPS_dict={}, units=Units('N','m', 'C')):
+    """
+    'ID', 'N1', 'N2', """
+    # =======================
+    # =====    Beams    =====
+    # =======================
+    # EL.2 | num | name | colour | type | prop | group | topo() | orient_node | orient_angle 
+    #      | is_rls { | rls { | k } } is_offset { | ox | oy | oz } | dummy
+    # EL.4 | num | name | colour | type | prop | group | topo() | orient_node | orient_angle 
+    #      | is_rls { | rls { | k } } off_x1 | off_x2 | off_y | off_z | dummy | parent
+    # EL.4  1       NO_RGB  BEAM    1   1   1   2   0   0   NO_RLS  0   0   0   0
+    # NO_RLS | RLS | STIFF  - F, R, K
+    
+    # ** Writing Beams to GWA **
+    bm_max = 1
+    for i, (bm_name, bm_dict) in enumerate(LINE_dict.items()):
+        bm_ID = bm_dict.get('ID', try_numeric(bm_name) if is_numeric(bm_name) else i)
+        N1 = bm_dict.get('N1', '')
+        N2 = bm_dict.get('N2', '')
+        bm_angle = bm_dict.get('ANG', 0)
+        frame_prop_name = bm_dict.get('SECTION', None)
+        fp_dict = FRAME_PROPS_dict.get(frame_prop_name, {})
+        prop_num = fp_dict.get('ID', bm_dict.get('prop_ID', 1))
+        
+        # Offsets
+        # rigid_zone = bm_dict.get('RIGIDZONE', 0) # not implemented
+        offset_sys = bm_dict.get('OFFSETSYS', None)
+        
+        offsets = [bm_dict.get(offset, 0) for offset in 
+                    ('LENGTHOFFI', 'OFFSETYI', 'OFFSETYI', 
+                    'LENGTHOFFJ', 'OFFSETYJ', 'OFFSETYJ')]
+        
+        cardinal_point = bm_dict.get('CARDINALPT', 0)
+        if cardinal_point:
+            length_unit = fp_dict.get('UNITS')
+            u_conv = units_conversion_factor((length_unit, units.length)) if length_unit else 1.0
+            D, B, CY, CZ = [u_conv * fp_dict.get(dim, 0) for dim in ('D','B', 'C3', 'C2')]
+            off_y, off_z = cardinal_points_offsets(cardinal_point, D, B, CY=0, CZ=0)
+        else:
+            off_y, off_z = 0, 0
+
+        if any(offsets):
+                # NB OFFSETYI etc and offset_sys are not implemented
+            offsets = set_offsets(offsets, offset_sys, off_y, off_z)
+        else:
+            offsets = (0, 0, off_y, off_z)
+        offsets_txt = '\t'.join([str(n) for n in offsets])
+        
+        # Releases
+        release = bm_dict.get('RELEASE', '')   # "TI M2I M3I"
+        
+        if release:
+            releases_txt = 'RLS\t' + set_releases(release)
+        else:
+            releases_txt = 'NO_RLS'
+        
+        # NB GSA cannot do property modifications for individual members
+    
+        ostr4 = [str(val) for val in ['EL.4', str(bm_ID), bm_name, 'NO_RGB', 'BEAM', prop_num, prop_num, 
+                N1, N2, '', bm_angle]]
+        gwa.write('\t'.join(ostr4 + [releases_txt] + [offsets_txt]) + '\n')
+        bm_max = max(bm_max, bm_dict.get('ID', 0))
+
+
+def write_shells(gwa, AREA_dict, SHELL_PROPS_dict={}, bm_max=1):
+    """
+    'ID', 'Name', 'NumPts', 'N1', 'N2'... 
+    """
+    # ========================
+    # =====    Shells    =====
+    # ========================
+    # EL.2 | num | name | colour | type | prop | group | topo() | orient_node | orient_angle | is_rls { | rls { | k } } is_offset { | ox | oy | oz } | dummy
+    # EL.4  1       NO_RGB  BEAM    1   1   1   2   0   0   NO_RLS  0   0   0   0
+    # ** Writing Beams to GWA **
+    for sh_name, sh_dict in AREA_dict.items():
+        sh_ID = sh_dict.get('ID', '')
+        num_pts = sh_dict.get('NumPts')
+        nodes = [sh_dict.get('N'+str(n+1), '') for n in range(num_pts)]
+        nodes_string = '\t'.join([str(n) for n in nodes])
+        #sh_angle = sh_dict.get('ANG', 0)
+        
+        # These should be added to assemblies
+        #pier = sh_dict.get('PIER', None)
+        #spandrel = sh_dict.get('SPANDREL', None)
+        #diaphragm = sh_dict.get('DIAPH', None)
+        
+        shell_prop_name = sh_dict.get('SECTION', None)
+        sp_dict = SHELL_PROPS_dict.get(shell_prop_name, {})
+        prop_num = sp_dict.get('ID', 1)
+        if num_pts == 3:
+            #gwa.write('EL.2\t{:d}\t{:s}\t\t{:s}\t{:d}\t{:d}\t{}\n'.format(
+            #    bmax + a + 1, area_name, 'TRI3', prop_num, prop_num, pts_txt))
+            ostr = ['EL.2', bm_max + sh_ID, sh_name, 'NO_RGB', 'TRI3', 
+                prop_num, prop_num, nodes_string]
+            gwa.write('\t'.join([str(val) for val in ostr]) + '\n')
+        elif num_pts == 4:
+            ostr = ['EL.2', bm_max + sh_ID, sh_name, 'NO_RGB', 'QUAD4', 
+                prop_num, prop_num, nodes_string]
+            gwa.write('\t'.join([str(val) for val in ostr]) + '\n')
+        else:
+            # TODO: may want to create members with polylines > quads
+            #el_type = None
+            pass
