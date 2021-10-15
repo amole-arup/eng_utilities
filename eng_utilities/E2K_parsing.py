@@ -3,9 +3,11 @@
 Functions exist for pushing the data out to a GSA text file.
 
 TODO:
-- split beams at intersections
-- add point and area loads (including point loads on beams) (0%)
-- calculate floor are for frame without slabs (80%)
+- revise default parsing so that two keys at the beginning become nested keys
+    of nested dictionaries. Also, single key and value become a dictionary
+    but that when parsing a subsequent line, a check is carried out for a
+    dictionary with a single value as well as looking for sub-keys.
+- calculate floor area for frame without slabs (99%) (add strategy for choice)
 - set up analyses and combinations (50%)
 - coordinate systems (25%)
 - grid layouts (0%)
@@ -13,13 +15,20 @@ TODO:
 - Wind loads (0%)
 - Seismic loads (0%)
 - logs (0%)
-- section pools (0%)
-- embedded sections
+- add filled steel tubes / pipes (MATERIAL & FILLMATERIAL props & quantities) (10%)
+- add section pools (20%)
+- add buckling restrained beams (10%)
+- embedded sections (80%)
 - NONE sections -> dummy
 - check deck properties
 
 Note: At the moment there is no log kept of elements that do not "make sense".
 This could be useful for identifying how complete the record is.
+
+DONE:
+- split beams at intersections (100%)
+- add point and area loads (including point loads on beams) (100%)
+
 """
 
 #from os import listdir
@@ -159,7 +168,10 @@ def load_func(the_dict, line): # a_dict is
     
 def load_parser(d):
     """
-    For loadclass = 'POINTLOAD', 'LINELOAD' or 'AREALOAD'"""
+    For loadclass = 'POINTLOAD', 'LINELOAD' or 'AREALOAD'
+      LINELOAD  "B2141"  "5F"  TYPE "POINTF"  DIR "GRAV"  LC "LL_0.5"  FVAL 15  RDIST 0.4
+      LINELOAD  "B2109"  "6F"  TYPE "UNIFF"  DIR "GRAV"  LC "DL"  FVAL 0.7
+    """
     ltype = d.get('TYPE')
     direction = d.get('DIR', None)
     ldict = {'TYPE': ltype, 'DIR': direction}
@@ -173,10 +185,10 @@ def load_parser(d):
         load_data = ((0, load_value), (1, load_value))
         ave_load = load_value
         ldict.update({'DATA': load_data, 'AVE_LOAD': ave_load})
-    elif ltype == 'POINTF':
+    elif ltype == 'POINTF':  # This is for beams
         load_data = [try_numeric(d.get(item)) for item in ('FVAL', 'RDIST')][::-1]
         ldict.update({'DATA': tuple(load_data)})    
-    elif ltype == 'FORCE':
+    elif ltype == 'FORCE':  # This is for nodes
         forces = ('FX', 'FY', 'FZ', 'MX', 'MY', 'MZ')
         load_data = [try_numeric(d.get(item)) for item in forces]
         ldict.update({'DATA': tuple(load_data)})    
@@ -497,6 +509,7 @@ def process_E2K_dict(E2K_dict):
         print('"story_geometry" failed')
     # LOADS   # TODO
     # GROUPS  # TODO
+    print('Post-processing finished')
     
 
 def run_all(E2K_model_path, get_pickle=False, **kwargs):
@@ -517,7 +530,10 @@ def run_all(E2K_model_path, get_pickle=False, **kwargs):
     
     process_E2K_dict(E2K_dict)
     
-    pickle.dump(E2K_dict, open(pickle_path_2, 'wb'))
+    try:
+        pickle.dump(E2K_dict, open(pickle_path_2, 'wb'))
+    except:
+        print('second pickle dump failed')
 
     if debug:
         for k,v in E2K_dict.items():
