@@ -19,8 +19,12 @@ TODO
 - add tests
 """
 
-from eng_utilities.geometry_utilities import *
-from collections import namedtuple, OrderedDict
+try:
+    from eng_utilities.geometry_utilities import *
+except:
+    print('eng_utilities not found, trying direct import')
+    from geometry_utilities import *
+# from collections import namedtuple, OrderedDict
 from operator import le, lt
 
 def bounding_box(coords):
@@ -223,9 +227,16 @@ def loop_finder(pt_dict, connections_dict, start_pt_ID=None, print_points=False)
     loop_ID_list = [pt0_ID]
     old_ID = None
     pt_ID = pt0_ID
+    loop_counter = 0
     while True:
         # This is a process that walks through the node network until it gets
         # back to the start (which is why it is a 'while', not a 'for').
+        loop_counter += 1
+        if loop_counter > 1000:
+            print('\n"loop_finder" interrupted after 1000 iterations, loop_ID_list is:')
+            print(loop_ID_list, '\n')
+            break
+                
         connected_node_IDs = connections_dict.get(pt_ID, [])
         node_IDs = [node_ID for node_ID in connected_node_IDs if node_ID != old_ID]
         node_IDs = [node_ID for node_ID in node_IDs if node_ID in pt_dict]
@@ -252,7 +263,7 @@ def loop_finder(pt_dict, connections_dict, start_pt_ID=None, print_points=False)
             # choose pt with minimum relative angle (i.e. on the right side for anti-clockwise loop)
             min_ang_pt = min((rel_ang, ID, ang) for rel_ang, ID, ang in zip(rel_angles, node_IDs, angles))
             new_pt_ID = min_ang_pt[1]
-            theta = min_ang_pt[2]
+            theta = min_ang_pt[2] + 0.0001 # nudge to prevent loops along a line
             if len(loop_ID_list) > 1:
                 if new_pt_ID == loop_ID_list[1]:
                     break
@@ -262,11 +273,18 @@ def loop_finder(pt_dict, connections_dict, start_pt_ID=None, print_points=False)
     return loop_ID_list
 
 
-def line_intersection2D(line1, line2, is_inclusive=True, tol=0.01):
+def line_intersection2D(line1, line2, is_inclusive=True, tol=0.01, angtol=0.001):
     """Returns a dictionary of any intersection when 
     provided with two lines (each defined as a pair of tuples).
-
+    
+    The dictionary includes the following keys:
+        'intersection' : intersection coordinates
+        't1'           : the t-parameter along line 1 where intersection occurs
+        't2'           : the t-parameter along line 2 where intersection occurs
+        'type'         : intersection types as below
+    
     The intersection type is reported as:
+        'points'  :  one or other or both lines have zero length (no intersection)
         'parallel':  lines are parallel (no intersection)
         'neither' :  intersection is outside both lines
         'line1'   : intersection is only inside the extent of line1
@@ -278,6 +296,14 @@ def line_intersection2D(line1, line2, is_inclusive=True, tol=0.01):
     is maintained, crossing definition will include direct 
     intersections at line ends.
 
+    In addition, there is a key 'touching' that reports if the end
+    of one line lies on the other. This can be either line and either
+    end:
+        'line1_start' : the start of line1 is touching line2
+        'line1_end'   : the end of line1 is touching line2
+        'line2_start' : the start of line2 is touching line1
+        'line2_end'   : the end of line2 is touching line1
+
     Lines are defined as a tuple of tuples:
         ((x1, y1), (x2, y2))
     These are then converted into parametric format:
@@ -286,6 +312,14 @@ def line_intersection2D(line1, line2, is_inclusive=True, tol=0.01):
     p1(t1) = p1 + t1 * v1
     p2(t2) = p2 + t2 * v2
     
+    Args:
+        line1 (list):
+        line2 (list):
+        is_inclusive (bool): whether Note that this does not affect
+            the `touching` checks which are assumed to be inclusive
+        tol (float): Tolerance for 0.01
+        angtol (float): Angular tolerance for parallel check (default 0.001)
+
     Result: 
 
     """
@@ -293,9 +327,20 @@ def line_intersection2D(line1, line2, is_inclusive=True, tol=0.01):
 
     p1, v1 = line1[0], subNDx(line1[1], line1[0])
     p2, v2 = line2[0], subNDx(line2[1], line2[0])
-     
+    mag1, mag2 = [magNDx(v) for v in (v1, v2)]
+    maxmag = max(mag1, mag2)
+    
+    # NB cross product is v1[0]*v2[1] - v1[1]*v2[0]
     denom = v1[0] * v2[1] - v1[1] * v2[0]
-    if denom == 0:
+    
+    if (mag1 == 0) and (mag2 == 0):  #  Two points
+        return {'type': 'points'}
+    elif mag1 == 0:  #  One point
+        return {'type': 'points'}
+    elif mag2 == 0:  #  Other point
+        return {'type': 'points'}
+    elif abs(denom) <= tol / mag1 / mag2: # Fairly parallel
+        # This needs more work to identify collinearity and overlap
         return {'type': 'parallel'}
     else:
         t1 = ((p1[1] - p2[1]) * v2[0] - (p1[0] - p2[0]) * v2[1]) / denom        
@@ -309,7 +354,10 @@ def line_intersection2D(line1, line2, is_inclusive=True, tol=0.01):
         if crossing_type is None:
             crossing_type = 'neither'
         
-        
+        # Test for the end of one line lying on the other
+        # Note that for line2 to touch within line1, crossing_type must be 'line1' 
+        # if not is_inclusive (or 'both' if is_inclusive)
+        # and vice versa
         touching = []
         if (-tol <= t2 <= tol):
             touching.append('line2_start')
@@ -422,8 +470,15 @@ def nodes_outside_loop(node_coord_dict, pt_loop):
         # tidy stack - only keep lines with end_x > node_x
         if len(line_stack) > 0:
             line_stack = [line for line in line_stack if line[1][0] > node_x]
+
+        loop_count = 0
         
         while line is not None:
+            loop_count += 1
+            if loop_count > 1000:
+                print('\n"nodes_outside_loop" interrupted after 1000 iterations, line_stack is:')
+                print(line_stack, '\n')
+                break
             # try adding lines to line_stack
             # check whether line is ahead of node 
             # and whether line is vertical
@@ -478,6 +533,10 @@ def all_loops_finder(pt_dict, connections_dict, sort_points=True, print_points=F
     i = 0
     while True:
         i += 1
+        if i > 1000:
+            print('\n"all_loops_finder" interrupted after 1000 iterations, loops_list is:')
+            print(loops_list, '\n')
+            break
         # 
         if len(pt_dict) == 0:
             break
@@ -549,6 +608,10 @@ def main():
     #print(self_intersections(lines3Da, is_inclusive=True))
     print('Lines3Db:', lines3Db)
     #print(self_intersections(lines3Da, is_inclusive=True))
+    sorted_list = sorted((pt1, pt2, *tail, 1) if pt1[0] < pt2[0] else (pt2, pt1, *tail, -1) 
+            for pt1, pt2, *tail in lines2Da)
+    print('Lines2Da:', lines2Da)
+    print('lines2Da (sorted):', sorted_list)
 
 
 
