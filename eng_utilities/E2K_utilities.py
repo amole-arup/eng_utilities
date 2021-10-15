@@ -1,4 +1,4 @@
-"""
+"""A set of utilities that act on ETABS-specific data structures
 """
 
 from geometry_utilities import *
