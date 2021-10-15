@@ -14,7 +14,7 @@ from os.path import exists, isfile, join, basename, splitext
 
 from eng_utilities.general_utilities import try_numeric, unit_validate, Units, units_conversion_factor
 from eng_utilities.geometry_utilities import *
-from eng_utilities.polyline_utilities import sec_area_3D, perim_area_centroid
+from eng_utilities.polyline_utilities import sec_area_3D, perim_area_centroid, line_intersection2D
 from eng_utilities.E2K_section_utilities import *
 from eng_utilities.GWA_utilities import GWA_sec_gen, GWA_GEO
 from eng_utilities.polyline_utilities import perim_full_props, all_loops_finder
@@ -49,8 +49,20 @@ def enhance_frame_properties(f_name, f_dict, E2K_dict,
     
     temp_f_dict_list = []
     res = None
+
+    if f_dict['SHAPE'] == 'Auto Select Shape':
+        as_dict = E2K_dict.get('AUTO SELECT SECTION LISTS',{}).get('AUTOSECTION',{}).get(f_name,{})
+        if as_dict:
+            f_dict2 = E2K_dict.get('FRAME SECTIONS',{}).get('FRAMESECTION',{}).get(f_name,{}).copy()
+            if f_dict2:
+                f_dict2['Note'] = ['Auto Select Shape']
+                f_dict2['AUTOSELECTDESIGNTYPE'] = f_dict.get('AUTOSELECTDESIGNTYPE', '')
+                f_dict2['POOL'] = as_dict.get('POOL_ID', 1)
+                f_dict = f_dict2
     
     if f_dict['SHAPE'] == 'Auto Select List':
+        pass
+    elif f_dict['SHAPE'] == 'Auto Select Shape':
         pass
     elif f_dict['SHAPE'] == 'SD Section':
         pass  # this is addressed later
@@ -98,8 +110,12 @@ def enhance_CALC_properties(f_dict, m_dict):
         props = I_props_func(f_dict)
     elif shape in ('Steel Pipe', 'Concrete Pipe', 'Pipe', 'PIPE'): 
         props = CHS_props_func(f_dict)
+    elif shape in ('Filled Steel Pipe'): 
+        props = CHS_props_func(f_dict)  # TODO temporary
     elif shape in ('Steel Tube', 'Concrete Tube', 'Tube', 'TUBE'):
         props = RH_props_func(f_dict)
+    elif shape in ('Filled Steel Tube'):
+        props = RH_props_func(f_dict)  # TODO  temporary
     elif shape in ('Steel Angle', 'Concrete Angle', 'Angle'):
         props = A_props_func(f_dict)
     elif shape in ('Steel Double Angle', 'Concrete Double Angle', 'Double Angle'): 
@@ -110,10 +126,13 @@ def enhance_CALC_properties(f_dict, m_dict):
         props = C_props_func(f_dict)
     elif shape in ('Steel Channel', 'Concrete Channel', 'Channel', 'CHANNEL'): 
         props = CH_props_func(f_dict)
+    elif shape in ('Buckling Restrained Brace'): # BUCKLING RESTRAINED BRACE SECTIONS
+        props = R_props_func(f_dict)  # TODO Temporary
     else:
         print('Enhancement functions not found for:\n', f_dict)
         props = {}
-        
+    
+    # ('Filled Steel Tube') # 'FILLMATERIAL'
     #('Concrete Encasement Rectangle',): CER_props_func,
     #('Concrete Encasement Circle',): CEC_props_func,
     #('Nonprismatic',): NP_props_func, 
@@ -141,18 +160,24 @@ def enhance_CAT_properties(f_dict, m_dict,
     # For catalogue sections, the sections can be looked up.
     # but the units may need to be converted.
     # 1. Lookup correct file name using sec_key_dict lookup on lowercase name
-    file_base = splitext(basename(f_dict.get('FILE', prop_file)))[0]
-    prop_file = sec_key_dict[file_base.casefold()]
+    if prop_file is not None:
+        file_base = splitext(basename(f_dict.get('FILE', prop_file)))[0]
+        prop_file = sec_key_dict.get(file_base.casefold(), None)
     f_dict['FILE'] = prop_file # update 'FILE' with useful propfile
     # 2. Lookup section properties
     shape_dict = get_cat_sec_props(f_dict, section_def_dict)
-    if isinstance(shape_dict, dict):
+    if shape_dict and isinstance(shape_dict, dict):
         # 3. Place section properties into the dictionary (with units)
         for k, v in shape_dict.items():
             f_dict[k] = v
         
         # 4. Gather material density and converted section area
         sh_dict = convert_prop_units(shape_dict, model_units.length)
+        if sh_dict is None:
+            print('convert_prop_units has failed with:')
+            print(f'shape_dict: {shape_dict}')
+            print(f'model_units: {model_units}')
+            pass
         area = sh_dict.get('A')
         mat = f_dict.get('MATERIAL')
         if mat and m_dict:
@@ -264,7 +289,11 @@ def FILE_PP(E2K_dict):
         file_path, date_txt = file_info.split(ext + ' saved ')
         file_path += ext
 
-        file_date = parser.parse(date_txt)
+        try:
+            file_date = parser.parse(date_txt)
+        except:
+            print('First date-parsing attempt failed')
+            file_date = parser.parse(date_txt.split()[0])
         #print(file_path)
         #print(file_date)
         E2K_dict['FILEPATH'] = file_path
@@ -353,7 +382,7 @@ def FRAME_SECTIONS_PP(E2K_dict, section_def_dict):
         if f_dict.get('FILE'): # check format and correct if necessary
             # Older files have filepath, so convert these to file base-name
             file_base = splitext(basename(f_dict.get('FILE', prop_file)))[0]
-            prop_file = sec_key_dict[file_base.casefold()]
+            prop_file = sec_key_dict.get(file_base.casefold(), None)
             f_dict['FILE'] = prop_file
         
         if f_dict.get('A'):
@@ -420,6 +449,24 @@ def NONPRISMATIC_SECTIONS_PP(E2K_dict):
     """Post-processing the properties of non-prismatic sections
     TODO: add something for this"""
     pass
+
+
+def AUTO_SELECT_SECTION_LISTS_PP(E2K_dict):
+    """TODO: Combines lists of pool sections into the dictionary
+      AUTOSECTION "ATB70C"  STARTSECTION "B70C-28SN"  
+      AUTOSECTION "ATB70C"  "B70C-28SN"  "B70C-32SN"  "B70C-36SN"  "B70C-40SN"  "B70C-45SN"  "B70C-50SN"  
+    -> {"ATB70C": {"STARTSECTION": "B70C-28SN", "POOL_ID": 1, "POOL": ["B70C-28SN", "B70C-32SN"], ... }, ...}
+    NB provide POOL_ID (for lookup in GWA)
+    """
+    pass 
+
+
+def BUCKLING_RESTRAINED_BRACE_SECTIONS_PP(E2K_dict):
+    pass # probably not needed - data is probably already structured
+
+
+def CONCRETE_SECTIONS_PP(E2K_dict):
+    pass # probably not needed - data is probably already structured
 
 
 def SD_SECTIONS_PP(E2K_dict):
@@ -1035,47 +1082,195 @@ def story_geometry(E2K_dict):
 
     units = E2K_dict.get('UNITS')    
 
-    for story_name in STORY_dict: # = '5/F'
+    storylist = [''] + list(STORY_dict.keys())
+    
+    for upper_story, lower_story in zip(storylist[:-1], storylist[1:]): # = '5/F'
+        print(f'upper storey: {upper_story}, lower storey: {lower_story}', end='|')
         # Extract joint pairs from beam dictionary
         line_list = [(k, v['JT1'], v['JT2']) 
-                for k, v in LINE_dict.items() 
-                if (k[1] == story_name and v['MEMTYPE'] =='BEAM')]
-        #edge_list = [(k, v['JT1'], v['JT2']) 
-        #        for k, v in AREA_dict.items() 
-        #        if (k[1] == story_name and v['MEMTYPE'] =='PANEL')]
+                        for k, v in LINE_dict.items() 
+                        if (k[1] == lower_story and v['MEMTYPE'] in ('BEAM', 'LINE'))]
+        edge_list = [tuple([k] + [v['JT'+str(i+1)] 
+                    for i in range(v.get('NumPts')) 
+                    if v.get('NumPts') and v['JT'+str(i+1)][1] == lower_story]) 
+                        for k, v in AREA_dict.items() 
+                        if (k[1] in (upper_story, lower_story) and v['MEMTYPE'] in ('PANEL', 'AREA'))]
+        
+        combined_line_list = [line for line in (line_list + edge_list) if len(line) == 3]
 
-        """NODE_Connected_Beams_dict = {}
-        for b, n1, n2 in line_list:
-            # Lookup the set associated with node n1
-            # if there isn't one, create it (using the dictionary lookup default)
-            n_set = NODE_Connected_Beams_dict.get(n1, set())
-            n_set.add(b)
-            NODE_Connected_Beams_dict[n1] = n_set
-            n_set = NODE_Connected_Beams_dict.get(n2, set())
-            n_set.add(b)
-            NODE_Connected_Beams_dict[n2] = n_set"""
-
+        # NODE_Connected_Beams_dict = connectivity_dict_builder(combined_line_list, True)
+        
         # Dictionary for looking up connected nodes for any node 
-        NODE_Connected_Nodes_dict = {}
-        for b, n1, n2 in line_list:
-            n_set = NODE_Connected_Nodes_dict.get(n1,set())
-            n_set.add(n2)
-            NODE_Connected_Nodes_dict[n1] = n_set
-            n_set = NODE_Connected_Nodes_dict.get(n2,set())
-            n_set.add(n1)
-            NODE_Connected_Nodes_dict[n2] = n_set
+        NODE_Connected_Nodes_dict = connectivity_dict_builder(combined_line_list)
+        
+        # Create reduced lookup dictionary for node coordinates
+        nc_dict = {n: NODE_dict.get(n)['COORDS'] for n in NODE_Connected_Nodes_dict}
+        
+        # Split lines where they are touched by other lines (T-intersection)
+        print('split',end='|')
+        new_line_list, split_beams_dict = split_T(combined_line_list, nc_dict)
+
+        # update LINE_dict by adding the intersecting nodes
+        # this is for use by the GWA_writer
+        for beam_name, n_list in split_beams_dict.items():
+            beam_ID = (beam_name, lower_story)
+            b_dict = LINE_dict.get(beam_ID)
+            if b_dict is not None:
+                intersecting_beam_nodes_set = set([n for _,n in n_list])
+                beam_node_set = b_dict.get('INTERMEDIATE_NODES', set())
+                beam_node_set.update(intersecting_beam_nodes_set)
+                b_dict['INTERMEDIATE_NODES'] = beam_node_set
+
+        # rebuild the connected nodes dictionary to include the intersections
+        if len(split_beams_dict) > 0:
+            NODE_Connected_Nodes_dict = connectivity_dict_builder(new_line_list)
         
         # Find loops in each story
-        nc_dict = {n: NODE_dict.get(n)['COORDS'] for n in NODE_Connected_Nodes_dict}
+        print('loop',end='|')        
         loops_list = all_loops_finder(nc_dict, NODE_Connected_Nodes_dict)
         polylines = [[nc_dict[node] for node in loop] for loop in loops_list]
+        print('area',end='|')        
         area = sum(perim_area_centroid(polyline)[0] for polyline in polylines)
-        if MODEL_SUMMARY_dict.get(story_name) is None:
-            MODEL_SUMMARY_dict[story_name] = {}
-            MODEL_SUMMARY_dict[story_name]['Loop_Area_m2'] = area * units_conversion_factor((units.length, 'm'))**2
+        print('write',end='|')        
+        if MODEL_SUMMARY_dict.get(lower_story) is None:
+            MODEL_SUMMARY_dict[lower_story] = {}
+            MODEL_SUMMARY_dict[lower_story]['Loop_Area_m2'] = area * units_conversion_factor((units.length, 'm'))**2
         
         if len(sum(loops_list,[])) > 0:
-            DIAPHRAGM_LOOPS_dict[story_name] = loops_list.copy()
+            DIAPHRAGM_LOOPS_dict[lower_story] = loops_list.copy()
+        print('end')        
+        
+
+
+def connectivity_dict_builder(edge_list, as_edges=False):
+    """Builds connectivity dictionary for each vertex (node)
+
+    Args:
+        edge_list (list): a list describing the connectivity
+            e.g. [('E7', 'N3', 'N6'), ('E2', 'N9', 'N4'), ...]
+        as_edges (bool): whether to return connected vertices / nodes or edges
+    Returns:
+        (dict): connectivity dictionary, each node is a key and the 
+            value is a set of connected nodes
+            e.g. {'N3': {'N6', 'N11', 'N7'}, 'N9': {'N4'}, etc}
+    """
+    connectivity_dict = {}
+    for b, n1, n2 in edge_list:
+        n_set = connectivity_dict.get(n1,set())
+        n_set.add(b if as_edges else n2)
+        connectivity_dict[n1] = n_set
+        n_set = connectivity_dict.get(n2,set())
+        n_set.add(b if as_edges else n1)
+        connectivity_dict[n2] = n_set
+    return connectivity_dict
+            
+
+def dict_list_append(dict_of_lists, key, item, unique=False, sort=False):
+    if dict_of_lists.get(key) is None:
+        dict_of_lists[key] = []
+    item_list = dict_of_lists.get(key, [])
+    item_list.append(item)
+    if unique:
+        item_list = list(set(item_list))
+    if sort:
+        item_list = sorted(item_list)
+    dict_of_lists[key] = item_list
+
+
+def split_T(line_ID_list, nc_dict, tol=0.01):
+    """Returns a line_list modified to include new intersections.
+    
+    Calculates self intersections where one line touches another using a
+    sweep algorithm along the x-axis.
+    
+    augmented_list is a list of lines defined as pairs of tuples - only the x & y
+    coordinates are used in the processing, and additional data can be carried
+    as demonstrated below:
+        ((x1, y1), (x2, y2))
+        ((x1, y1, z1), (x2, y2, z2))
+        ((x1, y1), (x2, y2), text_string)
+
+    Note that this will include duplicate items for the same beam ID
+
+    Args:
+        line_list (list):
+        nc_dict (dict):
+    Returns:
+        tuple: 
+            new_line_ID_list: original line_ID_list with expansion of
+                lines that have intersections
+                e.g. [('B5', 'N32', 'N16'), ('B8', 'N3', 'N7'), ('B8', 'N7', 'N9'), ]
+            T_sorted_dict: dictionary of beams that have intersections
+                returns a sorted list of t-parameters and node IDs
+                e.g. {'B11': [(0.2, 'N3'), (0.4,'N13')], 'B21': [etc]}
+    """
+    augmented_list = []
+    for b, n1, n2 in line_ID_list:
+        n1_aug = tuple(list(nc_dict[n1]) + [n1])
+        n2_aug = tuple(list(nc_dict[n2]) + [n2])
+        augmented_list.append((n1_aug, n2_aug, b))
+    
+    # sort the lines after flipping the nodes if node2_x < node1_x
+    # - this adds an integer to indicate whether the line has been flipped
+    sorted_list = sorted((pt1, pt2, *tail, 1) if pt1[0] < pt2[0] else (pt2, pt1, *tail, -1) 
+            for pt1, pt2, *tail in augmented_list)
+    
+    line_stack = []
+    T_dict = {}
+
+    # Identify T-type intersections and generate list of nodes to insert
+    # for each beam
+    for line1 in sorted_list:
+        x = line1[0][0]
+        next_stack = []
+        for line2 in line_stack:
+            if line2[1][0] >= x:
+                next_stack.append(line2)
+                crossing = line_intersection2D(line1, line2, True, tol=tol)
+                if crossing['type'] != 'parallel':
+                    # extract line parameters for intersection
+                    t1 = crossing['t1'] if (line1[-1] == 1) else (1 - crossing['t1'])
+                    t2 = crossing['t2'] if (line2[-1] == 1) else (1 - crossing['t2'])
+                    # these line parameters are for the unflipped definitions
+                    t1_0 = t1 if (line1[-1] == 1) else (1 - t1)
+                    t2_0 = t2 if (line2[-1] == 1) else (1 - t2)
+                    # beam parameters - may also need to be flipped back
+                    b1 = line1[-2]
+                    b1n1 = line1[0][-1] if (line1[-1] == 1) else line1[1][-1]
+                    b1n2 = line1[1][-1] if (line1[-1] == 1) else line1[0][-1]
+                    b2 = line2[-2]
+                    b2n1 = line2[0][-1] if (line2[-1] == 1) else line2[1][-1]
+                    b2n2 = line2[1][-1] if (line2[-1] == 1) else line2[0][-1]
+
+                    if (tol < t2 < (1 - tol)):
+                        if (-tol < t1 < tol):
+                            # line1 end1 touches line2
+                            dict_list_append(T_dict, b2, (t2_0, b1n1))
+                        elif ((1 - tol) < t1 < (1 + tol)):
+                            # line1 end2 touches line2
+                            dict_list_append(T_dict, b2, (t2_0, b1n2))
+                    elif (tol < t1 < (1 - tol)):
+                        if (-tol < t2 < tol):
+                            # line2 end1 touches line1
+                            dict_list_append(T_dict, b1, (t1_0, b2n1))
+                        elif ((1 - tol) < t2 < (1 + tol)):
+                            # line2 end2 touches line1
+                            dict_list_append(T_dict, b1, (t1_0, b2n2))
+                    
+        line_stack = next_stack.copy()
+        line_stack.append(line1)
+    
+    T_sorted_dict = {k: sorted(v, key=lambda vv: vv[0]) for k, v in T_dict.items()}
+    new_line_ID_list = []
+    for line in line_ID_list:
+        b, n1, n2 = line
+        if len(T_dict.get(b,[])) == 0:
+            new_line_ID_list.append(line)
+        else:
+            n_list = [n1] + [n for _, n in T_sorted_dict[b]] + [n2]
+            [new_line_ID_list.append((b, n_i, n_j)) for n_i, n_j in zip(n_list[:-1], n_list[1:])]
+    
+    return new_line_ID_list, T_sorted_dict
 
 
 ## =============================
