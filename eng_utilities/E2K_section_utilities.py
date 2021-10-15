@@ -228,9 +228,12 @@ def get_cat_sec_props(f_dict, section_def_dict):
     area, units = None, None
     prop_file = f_dict['FILE']
     #print('prop_file: ', prop_file)
+    if prop_file is None:
+        shape_dict = {}
     if prop_file in section_def_dict.keys():
         #print('shape: ', f_dict.get('SHAPE'))
-        shape_dict = section_def_dict[prop_file]['SECTIONS'].get(f_dict.get('SHAPE'))
+        # look up shape properties - if lookup fails return empty dictionary
+        shape_dict = section_def_dict.get(prop_file, {}).get('SECTIONS',{}).get(f_dict.get('SHAPE'))
         #print('SHAPE_dict: ', shape_dict)
         #if shape_dict:
     return shape_dict # area, units
