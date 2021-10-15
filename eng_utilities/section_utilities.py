@@ -47,6 +47,9 @@ def convert_prop_units(shape_dict, model_length_units):
             elif prop_conv:
                 return {k:(try_numeric(v) * prop_conv**prop_dims_dict[k]) \
                     for k, v in shape_dict.items() if prop_dims_dict.get(k)}
+            else:
+                print(f'call to units_conv_dict failed with: ({prop_units}, {model_length_units})')
+                print('units_conv_dict: ', units_conv_dict)
 
 
 ## ==========================
