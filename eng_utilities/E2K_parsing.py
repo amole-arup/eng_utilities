@@ -8,6 +8,7 @@ TODO:
     but that when parsing a subsequent line, a check is carried out for a
     dictionary with a single value as well as looking for sub-keys.
 - calculate floor area for frame without slabs (99%) (add strategy for choice)
+- create a list of floor slabs that have the `DIAPH` parameter.
 - set up analyses and combinations (50%)
 - coordinate systems (25%)
 - grid layouts (0%)
