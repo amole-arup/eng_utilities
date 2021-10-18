@@ -23,13 +23,6 @@ for eek in e2k_list[:]:
     else:
         print(f'\nFile NOT found - {eek}')
         
-    #E2K_path = r'..\samples\SBVC_kipin_722_00.e2k'
-    #E2K_path = r'..\samples\Shaw_Nmm_2017_ULS.e2k'
-    #E2K_path = r'..\samples\cw1_kNm_722_01.e2k'
-    #E2K_dict = E2KtoDict(E2K_path)
-    
-    #E2K_dict = run_all(eek, get_pickle=False, Debug=True)
-    #E2K_dict = run_all(eek, get_pickle=False, Debug=False)
     E2K_dict = run_all(eek, get_pickle=True)
     
     GWA_file = eek.replace(".e2k",".gwa").replace(".$et",".gwa").replace(".E2K",".gwa").replace(".$ET",".gwa")
