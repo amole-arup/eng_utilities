@@ -1,4 +1,8 @@
-
+"""Generates list of files in the `samples` subdirectory, then
+runs the parsing function (`run_all`), which generates the
+`E2K_dict` dictionary containing all the model data,
+and then runs the GWA export function on the `E2K_dict`.
+"""
 
 from sys import path as syspath
 syspath.append(r'..\eng_utilities')
