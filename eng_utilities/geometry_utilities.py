@@ -24,6 +24,11 @@ def mag2D(v2D):
     return (v2D[0]**2 + v2D[1]**2)**0.5
 
 
+def neg2D(v2D):
+    """Returns the negative of the vector"""
+    return -v2D[0], -v2D[1]
+
+
 def unit2D(v):
     """Returns the unit 2D vector in the same direction 
     as the input 2D vector (as one 2-tuple)"""    
@@ -126,18 +131,26 @@ def planar_angle2D(v1, v2):
 
 def cart2cyl(vec3D, default_ang=0):
     """Converts a 3D cartesian vector (x, y, z) to 
-    cylindrical coordinates (r, theta, z)"""
-    x, y, z = vec3D
+    cylindrical coordinates (r, theta, z).
+    
+    Note that the third coordinate is simply passed through
+    (and in fact can be any type and any length - in other words
+    it can also handle 2D and nD where n > 1)."""
+    x, y, *z = vec3D
     r = (x**2 + y**2)**0.5
     ang = default_ang if x == y == 0 else atan2(y,x)
-    return r, ang, z
+    return (r, ang, *z)
 
 
 def cyl2cart(vec3D):
     """Converts a 3D cylindrical vector (r, theta, z) to 
-    cartesian coordinates (x, y, z)"""
-    r, theta, z = vec3D
-    return r * cos(theta), r * sin(theta), z
+    cartesian coordinates (x, y, z).
+
+    Note that the third coordinate is simply passed through
+    (and in fact can be any type and any length - in other words
+    it can also handle 2D and nD where n > 1)."""
+    r, theta, *z = vec3D
+    return (r * cos(theta), r * sin(theta), *z)
 
 
 def angfix(ang):
@@ -159,6 +172,11 @@ def dist3D(pt1, pt2):
 def mag3D(v3D):
     """Magnitude of the point or vector"""
     return (v3D[0]**2 + v3D[1]**2 + v3D[2]**2)**0.5
+
+
+def neg3D(v3D):
+    """Returns the negative of the 3D vector"""
+    return -v3D[0], -v3D[1], -v3D[2]
 
 
 def unit3D(v):
@@ -259,7 +277,7 @@ def fmt_3x3(dc, fmt='7.4f'):
 
 def magND(v):
     """Returns magnitude of an nD vector"""
-    return sum(vv*2 for vv in v) ** 0.5
+    return sum(vv**2 for vv in v) ** 0.5
 
 
 def magNDx(v, limit=0):
@@ -274,6 +292,25 @@ def magNDx(v, limit=0):
     else:
         return sum(vv**2  for i, vv in enumerate(v)
         if (isinstance(vv, (int, float))))**0.5
+
+
+def negND(v):
+    """Returns negative of an nD vector"""
+    return [-vv for vv in v]
+
+
+def negNDx(v, limit=0):
+    """Returns negative of an nD vector,
+    ignoring items if they are not numeric, with 
+    an option to limit length of the tuple to a certain 
+    length defined by the `limit` argument"""
+    if limit > 0:
+        return [-vv  for i, vv in enumerate(v)
+        if (isinstance(vv, (int, float)) 
+            and i < limit)]
+    else:
+        return [-vv  for i, vv in enumerate(v)
+        if (isinstance(vv, (int, float)))]
 
 
 def unitND(v):
@@ -314,7 +351,13 @@ def subNDx(v1, v2, limit=0):
     """Subtracts two nD vectors together, itemwise,
     ignoring items if they are not numeric, with 
     an option to limit length of tuples to a certain 
-    length defined by the `limit` argument"""
+    length defined by the `limit` argument
+    
+    e.g.    subNDx((2,4,1,'a'),(7,2,8,'b')) 
+        and 
+            subNDx((2,4,1,'a'),(7,2,8,'b'), limit=3)
+        will both return [-5,2,-7] 
+    """
     if limit > 0:
         return [vv1 - vv2 for i, (vv1, vv2) in enumerate(zip(v1, v2)) 
         if (isinstance(vv1, (int, float)) 
@@ -355,8 +398,8 @@ def divND(v1, v2):
 
 
 def divNDx(v1, v2, limit=0):
-    """Returns itemwise divisor two nD vectors, 
-    ignoring items if they are not numeric, with 
+    """Returns itemwise divisor of two nD vectors, 
+    ignoring items if one or more are not numeric, with 
     an option to limit length of tuples to a certain 
     length defined by the `limit` argument
     Note that this does not catch cases 
@@ -377,6 +420,27 @@ def dotND(v1, v2):
     return sum(vv1 * vv2 for vv1, vv2 in zip(v1, v2))
 
 
+def distND(pt1, pt2):
+    """Returns distance between two nD points (as two n-tuples)"""
+    return (sum((vv2 - vv1)**2.0 for vv1, vv2 in zip(pt1, pt2)))**0.5
+
+
+def distNDx(pt1, pt2, limit=0):
+    """Returns distance between two nD points (as two n-tuples)
+    It ignores items if they are not numeric, and also has
+    an option to limit length of tuples to a certain 
+    length defined by the `limit` argument"""
+    if limit > 0:
+        return (sum((vv2 - vv1)**2.0 for i, (vv1, vv2) in enumerate(zip(pt1, pt2))
+        if isinstance(vv1, (int, float))
+        and isinstance(vv2, (int, float))
+        and i < limit))**0.5
+    else:
+        return (sum((vv2 - vv1)**2.0 for vv1, vv2 in zip(pt1, pt2)
+        if isinstance(vv1, (int, float))
+        and isinstance(vv2, (int, float))))**0.5
+
+
 def scaleND(v, s):
     """Scales an nD vector by a factor s."""
     return [s * vv for vv in v]
@@ -392,8 +456,19 @@ def scaleNDx(v, s, limit=0):
         if (isinstance(v, (int, float)) 
             and i < limit)]
     else:
-        return [s * vv for i, vv in enumerate(v) 
+        return [s * vv for vv in v 
         if isinstance(v, (int, float))]
+
+
+def cos_simND(v1, v2):
+    """returns the cosine of the angle between two vectors (v1, v2) based on the dot product
+    v1 . v2 = |v1|  |v2| cos (<v1,v2>)"""
+    m1, m2 = magND(v1), magND(v2)
+    if m1 * m2 == 0.0 :
+        raise ValueError('Both vectors should have non-zero magnitude')
+    else:
+        return dotND(v1, v2) / m1 / m2
+
 
 
 # ================================
