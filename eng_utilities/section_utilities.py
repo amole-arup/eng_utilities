@@ -27,7 +27,7 @@ def convert_prop_units(shape_dict, model_length_units):
     if no conversion is defined, e.g. for forces into length(!)
     
     Args:
-        shape_dict (dict): should contain at least area `A1 and 
+        shape_dict (dict): should contain at least area `A` and 
             length units `UNITS`, e.g. {'A':2.1, 'UNITS':'m'}
         model_length_units (str): the length units in the model
     """
