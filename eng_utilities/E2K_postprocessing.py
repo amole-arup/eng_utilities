@@ -80,7 +80,7 @@ def enhance_frame_properties(f_name, f_dict, E2K_dict,
     else:
         stype = 'CALC' # assume it is a standard section
         f_dict['UNITS'] = E2K_dict.get('UNITS').length # add units for GWA string generation
-        enhance_CALC_properties(f_dict, m_dict)
+        enhance_CALC_properties(f_dict, m_dict, model_units)
         
     # returns errors, all changes are made to the dictionary
     temp_f_dict_list.append(res)
@@ -102,7 +102,8 @@ def enhance_SD_properties(f_dict, sd_dict):
         f_dict['Frame_Agg_Props'] = agg_props_list
 
 
-def enhance_CALC_properties(f_dict, m_dict):
+def enhance_CALC_properties(f_dict, m_dict, 
+                        model_units=Units('N', 'm', 'C')):
     """"""
     shape = f_dict.get('SHAPE')
     
@@ -142,6 +143,15 @@ def enhance_CALC_properties(f_dict, m_dict):
     #    print(f'shape: {shape}, f_dict: {f_dict}')
     for k, v in props.items():
         f_dict[k] = v
+    
+    # #### EDIT THIS #######
+    sh_dict = convert_prop_units(f_dict, model_units.length)
+    if sh_dict is None:
+        print('convert_prop_units has failed with:')
+        print(f'shape_dict: {shape_dict}')
+        print(f'model_units: {model_units}')
+        pass
+    # #### END EDIT ######
     
     area = f_dict.get('A')
     mat = f_dict.get('MATERIAL')
@@ -338,10 +348,11 @@ def MAT_PROPERTIES_PP(E2K_dict):
     dict_keys  = MAT_PROP_dict.keys()
 
     # define zero-weight material for dummy elements
-    MAT_PROP_dict['ZERO_WT'] = {'TYPE': 'OTHER', 'WEIGHTPERVOLUME': 0, 'E':0, 'ID': 1}
+    MAT_PROP_dict['ZERO_WT'] = {'TYPE': 'OTHER', 'WEIGHTPERVOLUME': 0, 'E':1, 'U': 0.3, 'ID': 1}
     
     for i, m_dict in enumerate(MAT_PROP_dict.values()):
-        m_dict['ID'] = i + 2  # because GSA does not include number zero
+        if m_dict.get('ID', 0) != 1:  # maintain the 'NONE' as number 1 
+            m_dict['ID'] = i + 2  # because GSA does not include number zero
 
 
 def FRAME_SECTIONS_PP(E2K_dict, section_def_dict):
@@ -373,10 +384,11 @@ def FRAME_SECTIONS_PP(E2K_dict, section_def_dict):
     FRAME_PROP_dict = E2K_dict.get('FRAME SECTIONS', {}).get('FRAMESECTION', {})
     
     # Define dummy frame section property for line members with property 'NONE'
-    FRAME_PROP_dict['NONE'] = {'MATERIAL': 'ZERO_WT',  'SHAPE': 'NA', 'ID': 1}
+    FRAME_PROP_dict['NONE'] = {'MATERIAL': 'ZERO_WT',  'SHAPE': 'NA', 'ID': 1, 'GWA': 'STD I(mm) 300 400 5 5'}
 
     for i, (f_name, f_dict) in enumerate(FRAME_PROP_dict.items()):
-        f_dict['ID'] = i + 2  # because GSA does not include number zero
+        if f_dict.get('ID', 0) != 1:  # maintain the 'NONE' as number 1 
+            f_dict['ID'] = i + 2  # because GSA does not include number zero
         #print('f_dict: ', f_dict)
         
         if f_dict.get('FILE'): # check format and correct if necessary
@@ -715,23 +727,24 @@ def LINE_CONN_PP(E2K_dict):
     extract element type and organise connection data.
     
     """
-    main_key = 'LINE CONNECTIVITIES'
-    sub_key = main_key.split()[0]
+    LINES_dict = E2K_dict.get('LINE CONNECTIVITIES',{}).get('LINE',{})
+    POINTS_dict = E2K_dict.get('POINT COORDINATES',{}).get('POINT',{})
 
-    if E2K_dict.get(main_key):
-        if E2K_dict[main_key].get(sub_key):
-            LINES_dict = E2K_dict[main_key][sub_key]
-
-            for k, v in LINES_dict.items():
-                if not v.get('Type'):
-                    pd_list = []
-                    for k2,v2 in v.items():
-                        pd_list.append(('Type', k2))
-                        pd_list.append(('N1', (v2[0],v2[2])))
-                        pd_list.append(('N2', (v2[1],0)))
-                    #print(pd_list)
-                    for k3, v3 in pd_list:
-                        LINES_dict[k][k3] = v3
+    for k, v in LINES_dict.items():
+        if v.get('Type') is None:
+            pd_list = []
+            for k2,v2 in v.items():
+                # If there are multiple definitions of a LINE, provide a warning and use the last
+                if isinstance(v2[0],(list, tuple)):
+                    print(f'Warning: multiple points: {k}: {v}\n  v2 is {v2}')
+                    not_used = [print(f'  N1: {vv[0]}: {POINTS_dict.get(vv[0])} | N2: {vv[0]}: {POINTS_dict.get(vv[1])}') for vv in v2]                    
+                    v2 = v2[-1]
+                pd_list.append(('Type', k2))
+                pd_list.append(('N1', (v2[0],v2[2])))
+                pd_list.append(('N2', (v2[1],0)))
+            #print(pd_list)
+            for k3, v3 in pd_list:
+                LINES_dict[k][k3] = v3
 
 
 def LINE_ASSIGNS_PP(E2K_dict):
@@ -841,14 +854,16 @@ def LINE_ASSIGNS_PP(E2K_dict):
             propmod_w = mem_dict.get('PROPMODW', 1)
             if clear_length:
                 for agg_prop in agg_props:
+                    brb_dens = f_dict.get('BRBWEIGHT',0) / clear_length
+                    wt_density = brb_dens if f_dict.get('SHAPE') == 'Buckling Restrained Brace' else agg_prop.wt_density
                     agg_props2.append(Agg_Props(
                         agg_prop.material, 
                         agg_prop.mat_type, 
-                        agg_prop.wt_density,
+                        wt_density,
                         clear_length, 
                         agg_prop.area, 
                         agg_prop.area * clear_length, 
-                        agg_prop.area * clear_length * agg_prop.wt_density * propmod_w))
+                        agg_prop.area * clear_length * wt_density * propmod_w))
                 mem_dict['Memb_Agg_Props'] = agg_props2
     
     
@@ -1105,45 +1120,69 @@ def story_geometry(E2K_dict):
         
         # Create reduced lookup dictionary for node coordinates
         nc_dict = {n: NODE_dict.get(n)['COORDS'] for n in NODE_Connected_Nodes_dict}
+        nID_dict = {n: NODE_dict.get(n)['ID']  for n in NODE_Connected_Nodes_dict}
         
         # Split lines where they are touched by other lines (T-intersection)
         print('split',end='|')
-        new_line_list, split_beams_dict = split_T(combined_line_list, nc_dict)
-
+        
+        tolerance = 0.01 * units_conversion_factor((units.length,'m'))
+        new_line_list, split_beams_dict = split_T(combined_line_list, nc_dict, tol=tolerance, angtol=0.001)
+        
         # update LINE_dict by adding the intersecting nodes
         # this is for use by the GWA_writer
-        for beam_name, n_list in split_beams_dict.items():
-            beam_ID = (beam_name, lower_story)
+        # It is assumed that the intermediate nodes were sorted
+        # by t-parameter
+        for beam_ID, n_list in split_beams_dict.items():
+            #beam_ID = (beam_name, lower_story)
+            tnn_list = [(t, nd, nID_dict.get(nd, None)) for t, nd in n_list]
             b_dict = LINE_dict.get(beam_ID)
             if b_dict is not None:
-                intersecting_beam_nodes_set = set([n for _,n in n_list])
-                beam_node_set = b_dict.get('INTERMEDIATE_NODES', set())
-                beam_node_set.update(intersecting_beam_nodes_set)
-                b_dict['INTERMEDIATE_NODES'] = beam_node_set
+                #intersecting_beam_nodes_set = set([n for _, n in n_list])
+                #beam_node_set = b_dict.get('INTERMEDIATE_NODES', set())
+                #beam_node_set.update(intersecting_beam_nodes_set)
+                #b_dict['INTERMEDIATE_NODES'] = beam_node_set
+                #b_dict['INTERMEDIATE_IDS'] = [nID_dict.get(nd) for nd in beam_node_set if nID_dict.get(nd) is not None]
+                # add list of (t-parameter, node_name, node_number to 
+                intermediate_node_list = b_dict.get('INTERMEDIATE_NODES', [])
+                sorted_list = sorted(set(intermediate_node_list + tnn_list), key=lambda x: x[0])                
+                b_dict['INTERMEDIATE_NODES'] = sorted_list
+                
 
         # rebuild the connected nodes dictionary to include the intersections
         if len(split_beams_dict) > 0:
             NODE_Connected_Nodes_dict = connectivity_dict_builder(new_line_list)
         
+        # Find duplicate nodes and eliminate them
+        #
+        
+        # Find overlapping beams and break them up and eliminate duplicates
+        #
+        
         # Find loops in each story
         print('loop',end='|')        
-        loops_list = all_loops_finder(nc_dict, NODE_Connected_Nodes_dict)
-        polylines = [[nc_dict[node] for node in loop] for loop in loops_list]
-        print('area',end='|')        
-        area = sum(perim_area_centroid(polyline)[0] for polyline in polylines)
-        print('write',end='|')        
-        if MODEL_SUMMARY_dict.get(lower_story) is None:
-            MODEL_SUMMARY_dict[lower_story] = {}
-            MODEL_SUMMARY_dict[lower_story]['Loop_Area_m2'] = area * units_conversion_factor((units.length, 'm'))**2
+        try:
+            loops_list = all_loops_finder(nc_dict, NODE_Connected_Nodes_dict)
+            polylines = [[nc_dict[node] for node in loop] for loop in loops_list]
         
-        if len(sum(loops_list,[])) > 0:
-            DIAPHRAGM_LOOPS_dict[lower_story] = loops_list.copy()
+            print('area',end='|')        
+            area = sum(perim_area_centroid(polyline)[0] for polyline in polylines)
+            print('write',end='|')        
+            if MODEL_SUMMARY_dict.get(lower_story) is None:
+                MODEL_SUMMARY_dict[lower_story] = {}
+                MODEL_SUMMARY_dict[lower_story]['Loop_Area_m2'] = area * units_conversion_factor((units.length, 'm'))**2
+            
+            if len(sum(loops_list,[])) > 0:
+                DIAPHRAGM_LOOPS_dict[lower_story] = loops_list.copy()
+        except:
+            print('loop_failed',end='|')        
+        
         print('end')        
         
 
 
 def connectivity_dict_builder(edge_list, as_edges=False):
-    """Builds connectivity dictionary for each vertex (node)
+    """Builds connectivity dictionary for each vertex (node) - a list
+    of connected nodes for each node.
 
     Args:
         edge_list (list): a list describing the connectivity
@@ -1163,9 +1202,13 @@ def connectivity_dict_builder(edge_list, as_edges=False):
         n_set.add(b if as_edges else n1)
         connectivity_dict[n2] = n_set
     return connectivity_dict
-            
 
-def dict_list_append(dict_of_lists, key, item, unique=False, sort=False):
+
+def append_to_dict_list(dict_of_lists, key, item, unique=False, sort=False):
+    """Utility to append items to a referenced list in a dictionary, and if the 
+    keyed list is not present in the dictionary, it adds the key and an empty list
+    and then adds the item to the list.
+    """
     if dict_of_lists.get(key) is None:
         dict_of_lists[key] = []
     item_list = dict_of_lists.get(key, [])
@@ -1177,7 +1220,23 @@ def dict_list_append(dict_of_lists, key, item, unique=False, sort=False):
     dict_of_lists[key] = item_list
 
 
-def split_T(line_ID_list, nc_dict, tol=0.01):
+def append_to_dict_set(dict_of_sets, key, item, sort=False):
+    """Utility to append items to a referenced set in a dictionary, and if the 
+    keyed set is not present in the dictionary, it adds the key and an empty set
+    and then adds the item to the list.
+    The same can be achieved by setting unique to True with `append_to_dict_list`
+    """
+    if dict_of_sets.get(key) is None:
+        dict_of_sets[key] = set()
+    item_set = dict_of_sets.get(key, set())
+    item_set.add(item)
+    item_list = list(set(item_set))
+    if sort:
+        item_set = set(sorted(item_list))
+    dict_of_sets[key] = item_set
+
+
+def split_T(line_ID_list, nc_dict, tol=0.01, angtol =0.001):
     """Returns a line_list modified to include new intersections.
     
     Calculates self intersections where one line touches another using a
@@ -1210,6 +1269,9 @@ def split_T(line_ID_list, nc_dict, tol=0.01):
         n2_aug = tuple(list(nc_dict[n2]) + [n2])
         augmented_list.append((n1_aug, n2_aug, b))
     
+    my_ID = ('B435', 'R/F T2') # for debugging
+    my_input = [x for x in augmented_list if x[-1] == my_ID]
+
     # sort the lines after flipping the nodes if node2_x < node1_x
     # - this adds an integer to indicate whether the line has been flipped
     sorted_list = sorted((pt1, pt2, *tail, 1) if pt1[0] < pt2[0] else (pt2, pt1, *tail, -1) 
@@ -1217,7 +1279,7 @@ def split_T(line_ID_list, nc_dict, tol=0.01):
     
     line_stack = []
     T_dict = {}
-
+    
     # Identify T-type intersections and generate list of nodes to insert
     # for each beam
     for line1 in sorted_list:
@@ -1226,51 +1288,176 @@ def split_T(line_ID_list, nc_dict, tol=0.01):
         for line2 in line_stack:
             if line2[1][0] >= x:
                 next_stack.append(line2)
-                crossing = line_intersection2D(line1, line2, True, tol=tol)
-                if crossing['type'] != 'parallel':
-                    # extract line parameters for intersection
+                
+                # Test for line intersections (crossings)
+                # Note that intersection parameters (t1 & t2 t-parameters)
+                # relate to the sorted lines
+                crossing = line_intersection2D(line1, line2, True, tol=tol, angtol=angtol)
+                
+                if crossing['type']  in ('enclosed', 'overlapping',
+                    ): # is this the right place to eliminate overlaps?
+                    # === NOT USED ===
+                    pass
+                    # ================                    
+                if crossing['type'] not in ('parallel', 'anti-parallel', 'separate', 
+                                            'error', 'enclosed', 'overlapping',):
+                    
+                    # Debugging
+                    flag = True if line1[-2] == my_ID or line2[-2] == my_ID else False
+                    if flag: 
+                        print(my_ID, ':')
+                        print(my_input)
+                        print(f'line1: {line1}\nline2: {line2}\n{crossing}')
+                    
+                    # ==========================================================
+                    # ===== Arrange line parameters for line orientation =======
+                    # ==========================================================
+                    # extract line parameters for intersection - 
+                    # convert the parameters and nodes for the original beam orientation
                     t1 = crossing['t1'] if (line1[-1] == 1) else (1 - crossing['t1'])
                     t2 = crossing['t2'] if (line2[-1] == 1) else (1 - crossing['t2'])
+                    
                     # these line parameters are for the unflipped definitions
-                    t1_0 = t1 if (line1[-1] == 1) else (1 - t1)
-                    t2_0 = t2 if (line2[-1] == 1) else (1 - t2)
-                    # beam parameters - may also need to be flipped back
-                    b1 = line1[-2]
-                    b1n1 = line1[0][-1] if (line1[-1] == 1) else line1[1][-1]
-                    b1n2 = line1[1][-1] if (line1[-1] == 1) else line1[0][-1]
-                    b2 = line2[-2]
-                    b2n1 = line2[0][-1] if (line2[-1] == 1) else line2[1][-1]
-                    b2n2 = line2[1][-1] if (line2[-1] == 1) else line2[0][-1]
-
+                    #t1_0 = t1 if (line1[-1] == 1) else (1 - t1)
+                    #t2_0 = t2 if (line2[-1] == 1) else (1 - t2)
+                    
+                    # beam parameters - some need to be flipped back
+                    # beam 1 ID
+                    b1_ID = line1[-2] 
+                    # beam 1 node IDs
+                    b1n1_ID = line1[0][-1] if (line1[-1] == 1) else line1[1][-1] 
+                    b1n2_ID = line1[1][-1] if (line1[-1] == 1) else line1[0][-1]
+                    # beam 2 ID
+                    b2_ID = line2[-2]
+                    # beam 2 node IDs
+                    b2n1_ID = line2[0][-1] if (line2[-1] == 1) else line2[1][-1]
+                    b2n2_ID = line2[1][-1] if (line2[-1] == 1) else line2[0][-1]
+                    
+                    # ====================================================
+                    # ======   Identify which lines touch which   ========
+                    # ====== and create lists of new connectivity ========
+                    # ====================================================
                     if (tol < t2 < (1 - tol)):
                         if (-tol < t1 < tol):
                             # line1 end1 touches line2
-                            dict_list_append(T_dict, b2, (t2_0, b1n1))
+                            append_to_dict_list(T_dict, b2_ID, (t2, b1n1_ID))
                         elif ((1 - tol) < t1 < (1 + tol)):
                             # line1 end2 touches line2
-                            dict_list_append(T_dict, b2, (t2_0, b1n2))
+                            append_to_dict_list(T_dict, b2_ID, (t2, b1n2_ID))
                     elif (tol < t1 < (1 - tol)):
                         if (-tol < t2 < tol):
                             # line2 end1 touches line1
-                            dict_list_append(T_dict, b1, (t1_0, b2n1))
+                            append_to_dict_list(T_dict, b1_ID, (t1, b2n1_ID))
                         elif ((1 - tol) < t2 < (1 + tol)):
                             # line2 end2 touches line1
-                            dict_list_append(T_dict, b1, (t1_0, b2n2))
+                            append_to_dict_list(T_dict, b1_ID, (t1, b2n2_ID))
+                    # ================================================
                     
         line_stack = next_stack.copy()
         line_stack.append(line1)
     
+    # Create an updated list of beamIDs and nodeID_start and nodeID_end
+    # Note that this will have multiple entries for each beamID where they
+    # have been split for intersections, and they are sorted by t-parameter.
+    # The sorting by `t` is important for creating the beam segments (GSA analysis layer) 
     T_sorted_dict = {k: sorted(v, key=lambda vv: vv[0]) for k, v in T_dict.items()}
     new_line_ID_list = []
     for line in line_ID_list:
         b, n1, n2 = line
-        if len(T_dict.get(b,[])) == 0:
+        if len(T_dict.get(b,[])) == 0: # no change...
             new_line_ID_list.append(line)
-        else:
+        else: 
             n_list = [n1] + [n for _, n in T_sorted_dict[b]] + [n2]
             [new_line_ID_list.append((b, n_i, n_j)) for n_i, n_j in zip(n_list[:-1], n_list[1:])]
     
     return new_line_ID_list, T_sorted_dict
+
+
+def beam_overlap(beam_1, beam_2, t_dict, tol = 0.001):
+    """Returns parametric coefficients for line2 ends relative to line_1
+    line_1 & line_2 are tuples of tuples (2D), each with trailing IDs
+    for beam and point. 
+
+    t_dict must contain entries t21 & t22 which are the parametric
+    locations of ends 1 and 2 of beam 2 relative to beam 1. Note that the 
+    dictionary can be generated by `eng_utilities.line_overlap`.
+    """
+    (*_, ptID_11), (*_, ptID_12), beamID_1 = beam_1
+    (*_, ptID_21), (*_, ptID_22), beamID_2 = beam_2
+
+    t21, t22 = [t_dict.get(k, None) for k in ('t21', 't22')]
+    new_beam_list = []
+
+    # If parameters are missing from the dictionary
+    if (t21 is None) or (t22 is None): # no change
+        return [(beamID_1, ptID_11, ptID_12), (beamID_2, ptID_21, ptID_22)]
+    # If both ends of both beams are essentially the same, return beam 1 only
+    elif (-tol < t21 < tol) and ((1 - tol) < t22 < (1 + tol)):
+        return [(beamID_1, ptID_11, ptID_12)]
+    # If both ends of both beams are essentially the same but anti-parallel, return beam 1 only
+    elif (-tol < t22 < tol) and ((1 - tol) < t21 < (1 + tol)):
+        return [(beamID_1, ptID_11, ptID_12)]
+    # If start ends of both beams are close, and beams are parallel, t22 > 1
+    elif (-tol < t21 < tol) and (t22 > 1):
+        return [(beamID_2, ptID_11, ptID_12), 
+                (beamID_1, ptID_12, ptID_22),]
+    # If start ends of both beams are close, and beams are parallel, t22 < 1
+    elif (-tol < t21 < tol) and (t22 < 1):
+        return [(beamID_1, ptID_11, ptID_21), 
+                (beamID_2, ptID_21, ptID_22),]
+    # If start and end ends of beams 1 & 2 are close, and beams are anti-parallel, t12 > 1
+    elif (-tol < t22 < tol) and (t21 > 1):
+        return [(beamID_2, ptID_11, ptID_12), 
+                (beamID_1, ptID_12, ptID_21),]
+    # If start and end ends of beams 1 & 2 are close, and beams are anti-parallel, t12 < 1
+    elif (-tol < t22 < tol) and (t21 < 1):
+        return [(beamID_1, ptID_11, ptID_22), 
+                (beamID_2, ptID_22, ptID_21),]
+    # line 1 encloses line 2
+    elif ((0 < t21 < 1) and (0 < t22 < 1)):
+        if t21 >= t22:
+            return [(beamID_1, ptID_11, ptID_21),
+                    (beamID_2, ptID_21, ptID_22),
+                    (beamID_1, ptID_22, ptID_12),]
+        else:
+            return [(beamID_1, ptID_11, ptID_22),
+                    (beamID_2, ptID_22, ptID_21),
+                    (beamID_1, ptID_21, ptID_12),]
+    # line 2 encloses line 1
+    elif ((t21 < 0 and t22 > 0) or (t22 < 0 and t21 < 0)):
+        if t21 >= t22:
+            return [(beamID_2, ptID_21, ptID_11),
+                    (beamID_1, ptID_11, ptID_12),
+                    (beamID_2, ptID_12, ptID_22),]
+        else:
+            return [(beamID_2, ptID_22, ptID_11),
+                    (beamID_1, ptID_11, ptID_12),
+                    (beamID_2, ptID_12, ptID_21),]
+    # parallel overlap, beam_1 first
+    elif ((0 < t21 < 1) and (t22 > 1)):
+        return [(beamID_1, ptID_11, ptID_21),
+                (beamID_1, ptID_21, ptID_12),
+                (beamID_2, ptID_12, ptID_22),]
+    # parallel overlap, beam_2 first
+    elif ((t21 < 0) and (0 < t22 < 1)):
+        return [(beamID_2, ptID_21, ptID_11),
+                (beamID_2, ptID_11, ptID_22),
+                (beamID_1, ptID_22, ptID_12),]
+    # anti-parallel overlap, beam_1 first
+    elif ((0 < t22 < 1) and (t21 > 1)):
+        return [(beamID_1, ptID_11, ptID_22),
+                (beamID_1, ptID_22, ptID_12),
+                (beamID_2, ptID_12, ptID_21),]
+    # anti-parallel overlap, beam_1 first
+    elif ((t22 < 0) and (0 < t21 < 1)):
+        return [(beamID_2, ptID_22, ptID_11),
+                (beamID_2, ptID_11, ptID_21),
+                (beamID_1, ptID_21, ptID_12),]
+    # Separate - no change
+    elif ((t21 > 1 and t22 > 1) or (t21 < 1 and t22 < 1)): 
+        return [(beamID_1, ptID_11, ptID_12), (beamID_2, ptID_21, ptID_22)]
+    else: # catchall - no change
+        return [(beamID_1, ptID_11, ptID_12), (beamID_2, ptID_21, ptID_22)]
 
 
 ## =============================
