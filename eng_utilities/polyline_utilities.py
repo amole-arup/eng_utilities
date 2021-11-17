@@ -19,6 +19,8 @@ TODO
 - add tests
 """
 
+from math import pi, sin, cos, tan, atan, atan2, asin, acos, exp, log, log10
+
 try:
     from eng_utilities.geometry_utilities import *
 except:
@@ -33,7 +35,21 @@ def bounding_box(coords):
     xmin = coords[0][0]  ;   xmax = coords[0][0]
     ymin = coords[0][1]  ;   ymax = coords[0][1]
     for xy in coords[1:]:
-        x, y = xy
+        x, y, *_ = xy # if coordinates are not 2D then if only considers first two
+        if x < xmin: xmin = x
+        if x > xmax: xmax = x
+        if y < ymin: ymin = y
+        if y > ymax: ymax = y
+    return [(xmin, ymin),(xmax, ymax)]
+
+
+def bounding_box2D(coords):
+    """Runs through a collection of x,y tuple pairs and 
+    extracts the values (xmin,ymin),(xmax,ymax)."""
+    xmin = coords[0][0]  ;   xmax = coords[0][0]
+    ymin = coords[0][1]  ;   ymax = coords[0][1]
+    for xy in coords[1:]:
+        x, y, *_ = xy # if coordinates are not 2D then if only considers first two
         if x < xmin: xmin = x
         if x > xmax: xmax = x
         if y < ymin: ymin = y
@@ -44,7 +60,15 @@ def bounding_box(coords):
 def perim_area_centroid(perim):
     """Calculates the area and centroid of sections defined by 
     closed 2D polylines (a list of 2D tuples - 
-    e.g. [(x1, y1), (x2, y2), ...])"""
+    e.g. [(x1, y1), (x2, y2), ...]). It will also accept 
+    3D coordinates [(x1, y1, z1), (x2, y2, z2), ...] but ignores
+    the z-coordinate in calculating the area (and centroid)
+    
+    Example:
+    >>> area, _ = perim_area_centroid([(-1, -2, 0), (2, -1, 0), (3, 2, 0)])
+    >>> area
+    4.0
+    """
     res = [0.0, 0.0, 0.0]
     x1, y1, *_ = perim[0]
     # close the polyline if necessary
@@ -228,13 +252,21 @@ def loop_finder(pt_dict, connections_dict, start_pt_ID=None, print_points=False)
     old_ID = None
     pt_ID = pt0_ID
     loop_counter = 0
+    ext_angle = 0
+    i=1
     while True:
         # This is a process that walks through the node network until it gets
         # back to the start (which is why it is a 'while', not a 'for').
+        if (ext_angle < -4 * pi) or (ext_angle > 6 * pi) :
+            print(f'\n# "loop_finder" interrupted after {180 * ext_angle / pi:6.1f} deg rotations ({loop_counter} cycles), loop_ID_list is:')
+            print(f'loop_{i} = ', loop_ID_list, '\n')
+            i += 1
+            break
         loop_counter += 1
         if loop_counter > 1000:
-            print('\n"loop_finder" interrupted after 1000 iterations, loop_ID_list is:')
-            print(loop_ID_list, '\n')
+            print(f'\n#"loop_finder" interrupted after 1000 iterations ({180 * ext_angle / pi:6.1f} deg rotations), loop_ID_list is:')
+            print(f'loop_{i} = ', loop_ID_list, '\n')
+            i += 1
             break
                 
         connected_node_IDs = connections_dict.get(pt_ID, [])
@@ -262,6 +294,7 @@ def loop_finder(pt_dict, connections_dict, start_pt_ID=None, print_points=False)
             rel_angles = [(angfix(ang - theta) if ang <= pi else (9 * pi)) for ang in angles] # angles relative to the incoming beam
             # choose pt with minimum relative angle (i.e. on the right side for anti-clockwise loop)
             min_ang_pt = min((rel_ang, ID, ang) for rel_ang, ID, ang in zip(rel_angles, node_IDs, angles))
+            ext_angle += min_ang_pt[0]
             new_pt_ID = min_ang_pt[1]
             theta = min_ang_pt[2] + 0.0001 # nudge to prevent loops along a line
             if len(loop_ID_list) > 1:
@@ -271,6 +304,134 @@ def loop_finder(pt_dict, connections_dict, start_pt_ID=None, print_points=False)
         old_ID = pt_ID
         pt_ID = new_pt_ID
     return loop_ID_list
+
+
+def line_overlap(line_1, line_2, line_format='pt_pt'):
+    """Returns parametric coefficients for line2 ends relative to line_1
+    line_1 & line_2 are tuples of tuples (2D or 3D)
+    
+    Note that it is assumed that the lines are parallel or anti-parallel.
+
+    The lines should be defined either as
+    -  (point2D, point2D)  pairs - line_format = 'pt_pt'
+    -  (point2D, vector2D) pairs - line_format = 'pt_vec'
+    
+    >>> line1, line2 = ((0,0,0),(4,3,0)), ((0.8,0.6,0),(4.8,3.6,0))
+    >>> a = line_overlap(line1, line2)
+    >>> b = a.pop('offset', None)
+    >>> a
+    {'t21': 0.2, 't22': 1.2, 'parallel': True}
+    >>> line1, line2 = ((0, 0, 0), (3, 4, 0)), ((0, -0.6, 0), (3, 3.4, 0))
+    >>> line_overlap(line1, line2)
+    {'t21': -0.096, 't22': 0.904, 'parallel': True, 'offset': 0.36}
+    """
+    if line_format == 'pt_pt':
+        #pt12 = line_1[1]
+        pt22 = line_2[1]
+        (pt1, vec1, *_), (pt2, vec2, *_) = [(pt1, subND(pt2, pt1)) for pt1, pt2, *_ in (line_1, line_2)]
+    else:
+        (pt1, vec1, *_), (pt2, vec2, *_) = line_1, line_2
+        #pt12 = addND(pt1, vec1)
+        pt22 = addND(pt2, vec2)
+    
+    ((mag1, ang1, *_), (mag2, ang2, *_)) = [cart2cyl(vec) for vec in (vec1, vec2)]
+    
+    r = 1 / mag1
+    s = r / mag1
+    # print(f'mag1= {mag1}, ang1= {ang1}, mag2= {mag2}, ang2= {ang2}, s= {s}')
+    if len(vec1) == 2:
+        offset = r * cross2D(vec1, subNDx(pt2, pt1, limit=2))
+    elif len(vec1) >= 3:
+        print(f'vec1= {vec1}, vec21={subNDx(pt2, pt1, limit=3)}')
+        offset = r * mag3D(cross3D(vec1[:3], subNDx(pt2, pt1, limit=3)))
+    else:
+        offset = None
+    t21 =  s * dotND(vec1, subND(pt2, pt1))
+    t22 =  s * dotND(vec1, subND(pt22, pt1))
+    
+    # parallel if t22 > t21 otherwise anti-parallel
+    parallel = (t22 > t21)
+
+    return {'t21': t21, 't22': t22, 'parallel': parallel, 'offset': offset}
+
+
+def collinearity2D(
+    line1, line2, 
+    line_format='pt_pt',
+    is_inclusive=True, 
+    tol=0.01, angtol=0.001,
+    check_parallel=True):
+    """Identifies collinearity and overlap between two lines
+    that have already been identified as parallel.
+    
+    The lines should be defined either as
+    -  (point2D, point2D)  pairs - line_format = 'pt_pt'
+    -  (point2D, vector2D) pairs - line_format = 'pt_vec'
+    
+    The result is one of the following:
+    - 'parallel'
+    - 'anti-parallel'
+    - 'separate'
+    - 'enclosed'
+    - 'overlapping'
+    - 'error' - the catchall
+    Note that the two lines should be sorted so that:
+    1. they are both oriented in the first quadrant and 
+    2. line1 starts at a lower x-coordinate and 
+    3. line1 is longer than line2
+    """
+    less_than = le if is_inclusive else lt
+
+    if line_format == 'pt_pt':
+        (pt1, vec1, *_), (pt2, vec2, *_) = [(pt1, subNDx(pt2, pt1)) for pt1, pt2, *_ in (line1, line2)]
+    else:
+        (pt1, vec1, *_), (pt2, vec2, *_) = line1, line2
+    
+    ((mag1, ang1, *_), (mag2, ang2, *_)) = [cart2cyl(vec) for vec in (vec1, vec2)]
+    
+    # check that lines really are parallel 
+    # (this should be verified by the functions before calling this)
+    if abs(abs(ang1) - abs(ang2)) > (1.0 + 1E-6) * angtol:
+        err_msg = f'angles of line1 ({ang1}rad) and line2 ({ang2}rad) should be within tolerance ({angtol}rad) of each other'
+        if check_parallel == True:
+            raise ValueError(err_msg)
+        else:
+            print('Warning: ', err_msg)
+    
+    # check if parallel or anti-parallel
+    if (abs(ang1 + ang2) < (1.0 + 1E-6) * angtol):
+        # anti-parallel
+        pt2, vec2 = addNDx(pt2,vec2), negNDx(vec2)
+        (mag2, ang2, *_) = cart2cyl(vec2)
+        p_fac = -1
+    else:
+        p_fac = 1
+    
+    # check whether offset (parallel but not collinear)
+    mag21, ang21, *_ = cart2cyl(subNDx(pt2, pt1, limit=3))
+    if abs(mag21 * (ang21 - ang1)) > tol:
+        # lines are offset
+        return 'anti-parallel' if p_fac == -1 else 'parallel'
+    
+    # check overlap
+    t1_end2, t2_end1, t2_end2 = [magNDx(subNDx(pt, pt1), limit=2) for pt in (vec1, pt2, addNDx(pt2, vec2))]
+
+    if less_than(t1_end2, t2_end1): 
+        # no overlap
+        'separate'
+    elif t1_end2 == 0: 
+        # strictly speaking these are special cases
+        # especially since line2 could be longer than
+        # line1 if they have not been sorted for longest first 
+        return 'overlapping'        
+    else:
+        if less_than(t2_end2, t1_end2):  # the end of line2 is within line1
+            return 'enclosed'
+        else:    # the end of line2 is outside line1 - overlap
+            return 'overlapping'
+    
+    print(f'error in collinearity2D, \nline1: {line1}, \nline2: {line2}, \ntype: {line_format}')
+    return 'error'
 
 
 def line_intersection2D(line1, line2, is_inclusive=True, tol=0.01, angtol=0.001):
@@ -284,25 +445,22 @@ def line_intersection2D(line1, line2, is_inclusive=True, tol=0.01, angtol=0.001)
         'type'         : intersection types as below
     
     The intersection type is reported as:
-        'points'  :  one or other or both lines have zero length (no intersection)
-        'parallel':  lines are parallel (no intersection)
-        'neither' :  intersection is outside both lines
-        'line1'   : intersection is only inside the extent of line1
-        'line2'   :  intersection is only inside the extent of line2
-        'both'    : intersection occurs within both line extents
+        'points'   :  one or other or both lines have zero length (no intersection)
+        'neither'  :  intersection is outside both lines
+        'line1'    : intersection is only inside the extent of line1
+        'line2'    :  intersection is only inside the extent of line2
+        'both'     : intersection occurs within both line extents
+        'parallel' : lines are parallel (no intersection, not collinear)
+        'anti-parallel' : lines are anti-parallel (no intersection, not collinear)
+        'separate' : collinear, but not overlapping
+        'enclosed' : collinear, line2 is inside line1
+        'overlapping' : collinear, line2 overlaps line1
+        'error'    :  the catchall (something went wrong)
 
     Intersections are defined in the XY plane. Other coordinates
     will be carried over, but ignored. If the is_inclusive option
     is maintained, crossing definition will include direct 
     intersections at line ends.
-
-    In addition, there is a key 'touching' that reports if the end
-    of one line lies on the other. This can be either line and either
-    end:
-        'line1_start' : the start of line1 is touching line2
-        'line1_end'   : the end of line1 is touching line2
-        'line2_start' : the start of line2 is touching line1
-        'line2_end'   : the end of line2 is touching line1
 
     Lines are defined as a tuple of tuples:
         ((x1, y1), (x2, y2))
@@ -321,9 +479,13 @@ def line_intersection2D(line1, line2, is_inclusive=True, tol=0.01, angtol=0.001)
         angtol (float): Angular tolerance for parallel check (default 0.001)
 
     Result: 
-
+        dict: keys are:
+            'type' - type of intersection (defined above)
+            'intersection' - coordinates of intersection
+            't1' - parametric location of intersection in line1
+            't2' - parametric location of intersection in line1
     """
-    op = le if is_inclusive else lt
+    less_than = le if is_inclusive else lt
 
     p1, v1 = line1[0], subNDx(line1[1], line1[0])
     p2, v2 = line2[0], subNDx(line2[1], line2[0])
@@ -341,34 +503,28 @@ def line_intersection2D(line1, line2, is_inclusive=True, tol=0.01, angtol=0.001)
         return {'type': 'points'}
     elif abs(denom) <= tol / mag1 / mag2: # Fairly parallel
         # This needs more work to identify collinearity and overlap
-        return {'type': 'parallel'}
+        parallel_class = collinearity2D(
+                            (p1, v1), (p2, v2), 
+                            line_format='pt_vec', 
+                            is_inclusive=True, 
+                            tol=tol, angtol=angtol,
+                            check_parallel=False)
+        return {'type': parallel_class}
     else:
         t1 = ((p1[1] - p2[1]) * v2[0] - (p1[0] - p2[0]) * v2[1]) / denom        
         t2 = ((p1[1] - p2[1]) * v1[0] - (p1[0] - p2[0]) * v1[1]) / denom
         
         crossing_type = None
-        if op(0, t1) and op(t1, 1):
+        if less_than(0, t1) and less_than(t1, 1):
             crossing_type = 'line1'
-        if op(0, t2) and op(t2, 1):
+        if less_than(0, t2) and less_than(t2, 1):
             crossing_type = 'both' if crossing_type else 'line2'
         if crossing_type is None:
             crossing_type = 'neither'
         
-        # Test for the end of one line lying on the other
-        # Note that for line2 to touch within line1, crossing_type must be 'line1' 
-        # if not is_inclusive (or 'both' if is_inclusive)
-        # and vice versa
-        touching = []
-        if (-tol <= t2 <= tol):
-            touching.append('line2_start')
-        if ((1 - tol) <= t2 <= (1 + tol)):
-            touching.append('line2_end')
-        if (-tol <= t1 <= tol):
-            touching.append('line1_start')
-        if ((1 - tol) <= t1 <= (1 + tol)):
-            touching.append('line1_end')
-        return {'intersection': addND(p1, scaleND(v1, t1)), 
-        't1': t1, 't2': t2, 'type': crossing_type, 'touching': touching,
+        return {'type': crossing_type, 
+        'intersection': addND(p1, scaleND(v1, t1)), 
+        't1': t1, 't2': t2, 
         }
     
 
@@ -574,6 +730,167 @@ def all_loops_finder(pt_dict, connections_dict, sort_points=True, print_points=F
             break
     
     return loops_list
+
+
+def convex_hull(points):
+    """Calculating 2D convex hull using Graham algorithm (XY plane).
+    
+    Based on 
+    https://leetcode.com/problems/erect-the-fence/discuss/103300/Detailed-explanation-of-Graham-scan-in-14-lines-(Python)
+    """
+    
+    # Computes the cross product of vectors p1p2 and p2p3
+    # value of 0 means points are colinear; < 0, cw; > 0, ccw
+    def cross(p1, p2, p3):
+        return (p2[0] - p1[0]) * (p3[1] - p1[1]) - (p2[1] - p1[1]) * (p3[0] - p1[0])
+
+    # Computes slope of line between p1 and p2
+    def slope(p1, p2):
+        return 1.0*(p1[1] - p2[1])/(p1[0] - p2[0]) if p1[0] != p2[0] else float('inf')
+      
+    # Find the smallest left point and remove it from points
+    start = min(points, key=lambda p: (p[0], p[1]))
+    #print(f'start is{start}')
+    points.pop(points.index(start))
+
+    # Sort points so that traversal is from start in a ccw circle.
+    points.sort(key=lambda p: (slope(p, start), -p[1], p[0]))
+
+    # Add each point to the convex hull.
+    # If the last 3 points make a cw turn, the second to last point is wrong. 
+    ans = [start]
+    for p in points:
+        ans.append(p)
+        #print(f'ans is {ans}')
+        #if len(ans) > 2:
+        #    print(f'ans[-3], ans[-2], ans[-1] are {ans[-3]}, {ans[-2]}, {ans[-1]}')
+        while len(ans) > 2 and cross(ans[-3], ans[-2], ans[-1]) < 0:
+            ans.pop(-2)
+  
+    return ans
+
+
+## NOTE: `Force Line` refers to a specific polyline
+## format that is intended to represent properties
+## along a line as a 2D shape anchored on a baseline
+## (0,0) to (1,0). The function `build_force_line` 
+## creates a 
+
+def build_force_line(polyline, tol=1E-6):
+    """Returns an open polyline suitable for 
+    combining load profiles on a beam (trapezoids 
+    defined by coordinates on a (0,0) to (1,0) baseline).
+    """
+    form = [[x, y] for x, y in polyline]
+    #fix start of list
+    if form[0][0] > tol:
+        if form[0][1] > tol:
+            form = [[0, 0]] + [[form[0][0], 0]] + form
+        else:
+            form = [[0, 0]] + form
+    # fix end of list
+    if (1 - form[-1][0]) > tol:
+        if form[-1][1] > tol:
+            form = form + [[form[-1][0], 0]] + [[1,0]]
+        else:
+            form = form + [[1, 0]]
+    return form
+
+
+def tidy_force_line(form, tol = 1E-6):
+    """This will eliminate unnecessary duplicates
+    However, this could mess with the matching process and should only
+    be applied once everything has been processed"""
+    #print('form length is ', len(form))
+    if len(form) > 2:
+        formout = [form[0]]
+        v0 = sub2D(form[1], form[0])
+        for pt1, pt2, pt3 in zip(form[0:-2], form[1:-1], form[2:]):
+            v1 = sub2D(pt2, pt1)
+            v2 = sub2D(pt3, pt1)
+            sim = cos_sim2D(v1, v2) if  (mag2D(v1) > 2 * tol) else cos_sim2D(v0, v2)
+            #print(sim, ': ', pt1, pt2, pt3, sub2D(pt2, pt1), sub2D(pt3, pt1))
+            if abs(sim) < (1 - tol):
+                formout.append(pt2)
+            v0 = v1 if (mag2D(v1) > 2 * tol) else v0
+        return formout + form[-1:]
+    else:
+        return form
+
+
+def interpolate_force_line(form, x, tol=1E-6):
+    """Interpolates a new point in a form polyline
+    Used by the `add_force_line` function"""
+    form_out = [form[0]]
+    for pt1, pt2 in zip(form[:-1], form[1:]):
+        if (x - pt1[0] > 0.5 * tol and 
+            pt2[0] - x > 0.5 * tol):
+            y = pt1[1] + (x - pt1[0]) * (pt2[1] - pt1[1]) / (pt2[0] - pt1[0])
+            form_out.extend(2 * [[x, y]])
+        form_out.append(pt2)
+    return form_out
+
+
+def interpolate_force_line2(form, x, tol=1E-6):
+    """Interpolates a new point in a form polyline
+    Used by the `add_force_line` function"""
+    form_out1 = [form[0]]
+    form_out2 = []
+    for pt1, pt2 in zip(form[:-1], form[1:]):
+        if (x - pt1[0] > 0.5 * tol and 
+            pt2[0] - x > 0.5 * tol):
+            y = pt1[1] + (x - pt1[0]) * (pt2[1] - pt1[1]) / (pt2[0] - pt1[0])
+            form_out1.extend([[x, y]])
+            form_out2.extend([[x, y]])
+        if x - pt2[0] >= 0.5 * tol:
+            form_out1.append(pt2)
+        else:
+            form_out2.append(pt2)
+    return form_out1, form_out2
+
+
+def interpolate_force_line3(form, x_list, rescale=True, tol=1E-6):
+    form_list = []
+    x_cuts = sorted(set(x_list))
+    for x in x_cuts:
+        a, b = interpolate_force_line2(form, x, tol=tol)
+        form_list.append(a)
+        form = b
+    form_list.append(b)
+    if rescale:
+        diffs = [b - a for a, b in zip([0] + x_cuts, x_cuts + [1])]
+        if sum(d == 0 for d in diffs) > 0:
+            print('Interpolate_force_line3 error (x_cuts, form_list):', x_cuts, form_list)
+        
+        form_list = [[((x - x0)/dx,y) for x, y in form] 
+                        for x0, dx, form in zip([0]+x_cuts, diffs, form_list)]
+    return form_list
+        
+
+
+def add_force_line(*forms): # form1, form2
+    """
+    Input is in the form of a line of coordinates
+    uniformly increasing along the x-axis
+    """
+    x_vals = sorted(set(x for x, _ in sum(forms,[]))) # form1 + form2
+    print('x_vals', x_vals)
+    new_forms = []
+    for form in forms:
+        for x in x_vals:
+            form = interpolate_force_line(form, x)
+        print('form', form)
+        new_forms.append(form)
+    xs = [x for x, y_ in new_forms[0]]
+    ys = [[y for _, y in form] for form in new_forms]
+    #sum_ys = sum(n for n in zip(ys))
+    #print('xs: ', len(xs), ': ', xs)
+    #print('forms(0): ', len(new_forms[0]), ': ', new_forms[0])
+    #print('forms(1): ', len(new_forms[1]), ': ', new_forms[1])
+    #print('ys: ', len(ys), ': ', list(zip(*ys)))
+    #return [[p1[0], p1[1] + p2[1]] for p1, p2 in zip(form1, form2)]
+    new_ys = [sum(x for x in y) for y in zip(*ys)]
+    return [[x, y] for x, y in zip(xs, new_ys)]
 
 
 def main():
