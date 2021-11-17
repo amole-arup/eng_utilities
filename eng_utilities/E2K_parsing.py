@@ -3,6 +3,7 @@
 Functions exist for pushing the data out to a GSA text file.
 
 TODO:
+- openings in floor diaphragms
 - revise default parsing so that two keys at the beginning become nested keys
     of nested dictionaries. Also, single key and value become a dictionary
     but that when parsing a subsequent line, a check is carried out for a
@@ -13,8 +14,8 @@ TODO:
 - coordinate systems (25%)
 - grid layouts (0%)
 - functions (response spectra, ground motions etc) (0%)
-- Wind loads (0%)
-- Seismic loads (0%)
+- wind loads (0%)
+- seismic loads (0%)
 - logs (0%)
 - add filled steel tubes / pipes (MATERIAL & FILLMATERIAL props & quantities) (10%)
 - add section pools (20%)
@@ -235,90 +236,6 @@ def combo_func(the_dict, line):
             b_dict[data_type] = the_list
 
 
-## NOTE: `Force Line` refers to a specific polyline
-## format that is intended to represent properties
-## along a line as a 2D shape anchored on a baseline
-## (0,0) to (1,0). The function `build_force_line` 
-## creates a 
-
-def build_force_line(polyline, tol=1E-6):
-    """Returns an open polyline suitable for 
-    combining load profiles on a beam (trapezoids 
-    defined by coordinates on a (0,0) to (1,0) baseline).
-    """
-    form = [[x, y] for x, y in polyline]
-    #fix start of list
-    if form[0][0] > tol:
-        if form[0][1] > tol:
-            form = [[0, 0]] + [[form[0][0], 0]] + form
-        else:
-            form = [[0, 0]] + form
-    # fix end of list
-    if (1 - form[-1][0]) > tol:
-        if form[-1][1] > tol:
-            form = form + [[form[-1][0], 0]] + [[1,0]]
-        else:
-            form = form + [[1, 0]]
-    return form
-
-
-def tidy_force_line(form, tol = 1E-6):
-    """This will eliminate unnecessary duplicates
-    However, this could mess with the matching process and should only
-    be applied once everything has been processed"""
-    #print('form length is ', len(form))
-    if len(form) > 2:
-        formout = [form[0]]
-        v0 = sub2D(form[1], form[0])
-        for pt1, pt2, pt3 in zip(form[0:-2], form[1:-1], form[2:]):
-            v1 = sub2D(pt2, pt1)
-            v2 = sub2D(pt3, pt1)
-            sim = cos_sim2D(v1, v2) if  (mag2D(v1) > 2 * tol) else cos_sim2D(v0, v2)
-            #print(sim, ': ', pt1, pt2, pt3, sub2D(pt2, pt1), sub2D(pt3, pt1))
-            if abs(sim) < (1 - tol):
-                formout.append(pt2)
-            v0 = v1 if (mag2D(v1) > 2 * tol) else v0
-        return formout + form[-1:]
-    else:
-        return form
-
-
-def interpolate_force_line(form, x, tol=1E-6):
-    """Interpolates a new point in a form polyline
-    Used by the `add_force_line` function"""
-    form_out = [form[0]]
-    for pt1, pt2 in zip(form[:-1], form[1:]):
-        if (x - pt1[0] > 0.5 * tol and 
-            pt2[0] - x > 0.5 * tol):
-            y = pt1[1] + (x - pt1[0]) * (pt2[1] - pt1[1]) / (pt2[0] - pt1[0])
-            form_out.extend(2 * [[x, y]])
-        form_out.append(pt2)
-    return form_out
-
-
-def add_force_line(*forms): # form1, form2
-    """
-    Input is in the form of a line of coordinates
-    uniformly increasing along the x-axis
-    """
-    x_vals = sorted(set(x for x, _ in sum(forms,[]))) # form1 + form2
-    print('x_vals', x_vals)
-    new_forms = []
-    for form in forms:
-        for x in x_vals:
-            form = interpolate_force_line(form, x)
-        print('form', form)
-        new_forms.append(form)
-    xs = [x for x, y_ in new_forms[0]]
-    ys = [[y for _, y in form] for form in new_forms]
-    #sum_ys = sum(n for n in zip(ys))
-    #print('xs: ', len(xs), ': ', xs)
-    #print('forms(0): ', len(new_forms[0]), ': ', new_forms[0])
-    #print('forms(1): ', len(new_forms[1]), ': ', new_forms[1])
-    #print('ys: ', len(ys), ': ', list(zip(*ys)))
-    #return [[p1[0], p1[1] + p2[1]] for p1, p2 in zip(form1, form2)]
-    new_ys = [sum(x for x in y) for y in zip(*ys)]
-    return [[x, y] for x, y in zip(xs, new_ys)]
 
 
 # ====================================
@@ -504,10 +421,11 @@ def process_E2K_dict(E2K_dict):
     LOAD_CASES_PP(E2K_dict) # post processing STATIC LOADS or LOAD PATTERNS
     #LINE_LOAD_PP(E2K_dict)
     MEMBER_quantities_summary(E2K_dict)
-    try:
+    story_geometry(E2K_dict)
+    """try:
         story_geometry(E2K_dict)
     except:
-        print('"story_geometry" failed')
+        print('"story_geometry" failed')"""
     # LOADS   # TODO
     # GROUPS  # TODO
     print('Post-processing finished')
