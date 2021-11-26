@@ -25,6 +25,26 @@ Shell_Agg_Props = namedtuple('Shell_Agg_Props', 'material mat_type wt_density th
 Agg_Props = namedtuple('Agg_Props', 'material mat_type wt_density length area volume weight')
 
 
+def rel_story(story_name, Story_List_dict, n_down):
+    """Returns the story relative to the story provided
+
+    Args:
+        story_name (str): this is the story name as used (i.e. including 
+            the tower name if present - typically joined with a hyphen, 
+            e.g. 'TowerOne-L22')
+        Story_List_dict - the 'Story_List' dictionary in the E2K_dict, 
+            e.g. Story_List_dict = E2K_dict['STORIES - IN SEQUENCE FROM TOP']['Story_Lists']
+            Note that for buildings without 'Towers' there is a 'Default' tower.
+        n_down (int): the number of stories to descnd. It automatically cuts off
+            above and below (will not go up above roof or down below base)
+    """
+    story_name_split = story_name.split('-')
+    if len(story_name_split) > 1:
+        story_list = Story_List_dict.get(story_name_split[0], [])
+    else:
+        story_list = Story_List_dict.get('Default', [])
+    story_index = story_list.index(story_name) if story_name in story_list else None
+    return story_list[max(0,min(story_index + n_down, len(story_list) - 1))]
 
 
 def enhance_frame_properties(f_name, f_dict, E2K_dict, 
@@ -148,9 +168,9 @@ def enhance_CALC_properties(f_dict, m_dict,
     sh_dict = convert_prop_units(f_dict, model_units.length)
     if sh_dict is None:
         print('convert_prop_units has failed with:')
-        print(f'shape_dict: {shape_dict}')
+        print(f'shape_dict: {sh_dict}')
         print(f'model_units: {model_units}')
-        pass
+        # pass
     # #### END EDIT ######
     
     area = f_dict.get('A')
@@ -606,19 +626,27 @@ def STORIES_PP(E2K_dict):
     TODO: this will need to be revised to take 
     'Tower' into account
     """
+    
     STORY_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('STORY',{})
     if STORY_dict:
-        STORY_keys = STORY_dict.keys()
-        base = sum(STORY_dict[key].get('ELEV',0) for key in STORY_keys)
-        heights = [STORY_dict[key].get('HEIGHT',0) for key in STORY_keys]
-        relative_elevations = list(accumulate(heights[::-1]))[::-1]
-        absolute_elevations = [base + relev for relev in relative_elevations]
-        story_ID = 1 # len(STORY_keys)
-        for key, relev, abs_elev in zip(STORY_keys, relative_elevations, absolute_elevations):
-            STORY_dict[key]['ID'] = story_ID
-            story_ID += 1
-            STORY_dict[key]['RELEV'] = relev
-            STORY_dict[key]['ABS_ELEV'] = abs_elev  
+        if E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('Story_List') is None:
+            STORY_keys = STORY_dict.keys()
+            E2K_dict['STORIES - IN SEQUENCE FROM TOP']['Story_List'] = dict()
+            E2K_dict['STORIES - IN SEQUENCE FROM TOP']['Story_List']['Default'] = STORY_keys
+                    
+        Story_List_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('Story_List')
+        
+        for STORY_keys in Story_List_dict.values():    
+            base = sum(STORY_dict[key].get('ELEV',0) for key in STORY_keys)
+            heights = [STORY_dict[key].get('HEIGHT',0) for key in STORY_keys]
+            relative_elevations = list(accumulate(heights[::-1]))[::-1]
+            absolute_elevations = [base + relev for relev in relative_elevations]
+            story_ID = 1 # len(STORY_keys)
+            for key, relev, abs_elev in zip(STORY_keys, relative_elevations, absolute_elevations):
+                STORY_dict[key]['ID'] = story_ID
+                story_ID += 1
+                STORY_dict[key]['RELEV'] = relev
+                STORY_dict[key]['ABS_ELEV'] = abs_elev  
 
 
 
@@ -759,9 +787,12 @@ def LINE_ASSIGNS_PP(E2K_dict):
     my_log = []
     
     # Get reference to story elevations
-    main_key = 'STORIES - IN SEQUENCE FROM TOP'
-    sub_key = 'STORY'
-    STORY_dict = get_E2K_subdict(E2K_dict, main_key, sub_key)
+    #main_key = 'STORIES - IN SEQUENCE FROM TOP'
+    #sub_key = 'STORY'
+    #STORY_dict = get_E2K_subdict(E2K_dict, main_key, sub_key)
+    STORY_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('STORY',{})
+    Story_List_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('Story_List',{})
+    
     
     # STORY_lookup - provide index, get story
     story_flag = False
@@ -930,9 +961,11 @@ def AREA_ASSIGNS_PP(E2K_dict):
     AREAS_dict = E2K_dict.get('AREA CONNECTIVITIES',{}).get('AREA',{})
     
     # Get reference to story elevations
-    main_key = 'STORIES - IN SEQUENCE FROM TOP'
-    sub_key = 'STORY'
-    STORY_dict = get_E2K_subdict(E2K_dict, main_key, sub_key)
+    #main_key = 'STORIES - IN SEQUENCE FROM TOP'
+    #sub_key = 'STORY'
+    #STORY_dict = get_E2K_subdict(E2K_dict, main_key, sub_key)
+    STORY_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('STORY',{})
+    Story_List_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('Story_List',{})
     
     # STORY_lookup - provide index, get story
     story_flag = False
