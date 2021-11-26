@@ -124,8 +124,8 @@ def try_merge(a_dict, data_coll):
             return
         ## - Snip end
     except:
-        print(f'In try_merge, data_coll is {data_coll}')
-        print('Possibly a case of "IndexError: tuple index out of range"')
+        print(f'WARNING: ** In try_merge, data_coll is {data_coll}')
+        print('WARNING: (cont\'d)) Possibly a case of "IndexError: tuple index out of range" **')
 
     for data in data_coll:
         try_1 = a_dict.get(data[0], None)
@@ -237,6 +237,67 @@ def combo_func(the_dict, line):
 
 
 
+def add_to_dict_list(the_dict, key, value):
+    value_list = the_dict.get(key,[])
+    value_list.append(value)
+    the_dict[key] = value_list
+
+
+def story_func(the_dict, line):
+    """
+    One of the challenges is that if a Tower has been defined
+    this needs to be carried over from any previous lines (it
+    is only defined once for each line and that then applies to 
+    all following ones)
+    NB `current_tower` needs to be defined in the current namespace"""
+    # Keep a list of stories
+    if not the_dict.get('Story_Lists'):
+        the_dict['Story_Lists'] = dict()
+    
+    line_key = line[0][0] # 'STORY'
+    story_basic_name = str(line[0][1])
+    story_type = line[1][0] # e.g. 'HEIGHT', 'ELEV'
+    line_dict = dict(line)  # NB STORY is retained as a key-value pair
+    if line_dict.get('TOWER') is None and the_dict.get('TOWERS') is None:
+        story_name = story_basic_name
+        add_to_dict_list(the_dict['Story_Lists'], 'Default', story_name)
+    elif line_dict.get('TOWER') is not None and the_dict.get('TOWERS') is None:
+        tower = line_dict['TOWER']
+        the_dict['TOWERS'] = [tower]
+        story_name = tower + '-' + story_basic_name
+        add_to_dict_list(the_dict['Story_Lists'], tower, story_name)
+    elif line_dict.get('TOWER') is None and the_dict.get('TOWERS') is not None:
+        tower = the_dict['TOWERS'][-1]
+        line_dict['TOWER'] = tower
+        story_name = tower + '-' + story_basic_name
+        add_to_dict_list(the_dict['Story_Lists'], tower, story_name)
+    else:  # both are not None
+        new_tower = line_dict['TOWER']
+        #towers = the_dict['TOWERS']
+        #towers.append(new_tower)
+        #the_dict['TOWERS'] = towers
+        add_to_dict_list(the_dict, 'TOWERS', new_tower)
+        story_name = new_tower + '-' + story_basic_name
+        add_to_dict_list(the_dict['Story_Lists'], new_tower, story_name)
+    
+    # if the line key is not already in the dictionary, add it
+    if not the_dict.get(line_key):
+        the_dict[line_key] = dict() # the_dict['STORY']
+        #print(f'...adding {line_key} to COMBO_dict')
+    
+    # make the line key the current reference
+    a_dict = the_dict[line_key] # a_dict is the_dict['STORY']
+    
+    # if the story is not already in the dictionary, add it
+    if a_dict.get(story_name) is None:
+        a_dict[story_name] = {**line_dict}
+        print(f'...adding {story_name} to {line_key} to STORY_dict')
+        
+    else:   # update
+        a_dict.update({k:v for k,v in line_dict.items()})
+    
+    #return a_dict
+
 
 # ====================================
 # ======  Main Parsing Function ======
@@ -285,6 +346,14 @@ def E2KtoDict(E2K_model_path, **kwargs):
             #    E2K_dict[key] = dict()
             #    the_dict = E2K_dict[key]
             #    the_func = point_parse
+            
+            elif line.startswith(r'$ STORIES - IN SEQUENCE FROM TOP'):
+                print(f'Starting to process {line.strip()} *')
+                ignore_lines = False
+                key = 'STORIES - IN SEQUENCE FROM TOP' # line[2:].strip() # removes `$ `
+                E2K_dict[key] = dict()
+                the_dict = E2K_dict[key]
+                the_func = story_func
             
             elif (line.startswith(r'$ POINT OBJECT LOADS') or 
                     line.startswith(r'$ FRAME OBJECT LOADS') or 
