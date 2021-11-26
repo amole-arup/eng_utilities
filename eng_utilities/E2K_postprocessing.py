@@ -32,10 +32,10 @@ def rel_story(story_name, Story_List_dict, n_down):
         story_name (str): this is the story name as used (i.e. including 
             the tower name if present - typically joined with a hyphen, 
             e.g. 'TowerOne-L22')
-        Story_List_dict - the 'Story_List' dictionary in the E2K_dict, 
+        Story_List_dict - the 'Story_Lists' dictionary in the E2K_dict, 
             e.g. Story_List_dict = E2K_dict['STORIES - IN SEQUENCE FROM TOP']['Story_Lists']
             Note that for buildings without 'Towers' there is a 'Default' tower.
-        n_down (int): the number of stories to descnd. It automatically cuts off
+        n_down (int): the number of stories to descend. It automatically cuts off
             above and below (will not go up above roof or down below base)
     """
     story_name_split = story_name.split('-')
@@ -629,12 +629,12 @@ def STORIES_PP(E2K_dict):
     
     STORY_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('STORY',{})
     if STORY_dict:
-        if E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('Story_List') is None:
+        if E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('Story_Lists') is None:
             STORY_keys = STORY_dict.keys()
-            E2K_dict['STORIES - IN SEQUENCE FROM TOP']['Story_List'] = dict()
-            E2K_dict['STORIES - IN SEQUENCE FROM TOP']['Story_List']['Default'] = STORY_keys
+            E2K_dict['STORIES - IN SEQUENCE FROM TOP']['Story_Lists'] = dict()
+            E2K_dict['STORIES - IN SEQUENCE FROM TOP']['Story_Lists']['Default'] = STORY_keys
                     
-        Story_List_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('Story_List')
+        Story_List_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('Story_Lists')
         
         for STORY_keys in Story_List_dict.values():    
             base = sum(STORY_dict[key].get('ELEV',0) for key in STORY_keys)
@@ -791,7 +791,7 @@ def LINE_ASSIGNS_PP(E2K_dict):
     #sub_key = 'STORY'
     #STORY_dict = get_E2K_subdict(E2K_dict, main_key, sub_key)
     STORY_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('STORY',{})
-    Story_List_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('Story_List',{})
+    Story_List_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('Story_Lists',{})
     
     
     # STORY_lookup - provide index, get story
@@ -965,7 +965,7 @@ def AREA_ASSIGNS_PP(E2K_dict):
     #sub_key = 'STORY'
     #STORY_dict = get_E2K_subdict(E2K_dict, main_key, sub_key)
     STORY_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('STORY',{})
-    Story_List_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('Story_List',{})
+    Story_List_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('Story_Lists',{})
     
     # STORY_lookup - provide index, get story
     story_flag = False
