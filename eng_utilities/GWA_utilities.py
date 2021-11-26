@@ -400,9 +400,10 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False):
         ('POINT SPRING PROPERTIES', 'POINTSPRING'),
     )]
 
-    STORY_dict, DIAPHRAGMS_dict, DIAPHRAGM_GROUPS_dict, DIAPHRAGM_LOOPS_dict = [
+    STORY_dict, Story_List_dict, DIAPHRAGMS_dict, DIAPHRAGM_GROUPS_dict, DIAPHRAGM_LOOPS_dict = [
         E2K_dict.get(k1,{}).get(k2,{}) for k1, k2 in (
         ('STORIES - IN SEQUENCE FROM TOP', 'STORY'),
+        ('STORIES - IN SEQUENCE FROM TOP', 'Story_Lists'),
         ('DIAPHRAGM NAMES', 'DIAPHRAGM'),
         ('DIAPHRAGM NAMES', 'GROUPS'),
         ('DIAPHRAGM NAMES', 'LOOPS'))]
