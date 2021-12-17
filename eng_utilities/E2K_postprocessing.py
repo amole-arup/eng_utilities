@@ -795,14 +795,16 @@ def LINE_ASSIGNS_PP(E2K_dict):
     
     
     # STORY_lookup - provide index, get story
-    story_flag = False
-    if STORY_dict:
-        STORY_keys = STORY_dict.keys()
-        STORY_lookup = {i+1: story for i, story in enumerate(list(STORY_keys)[::-1])}
+    
+    # story_flag = False
+    #if STORY_dict:
+    #    STORY_keys = STORY_dict.keys()
+    #    STORY_lookup = {i+1: story for i, story in enumerate(list(STORY_keys)[::-1])}
         
-        # STORY_reverse_lookup - provide story, get index
-        STORY_reverse_lookup = {v:k for k, v in STORY_lookup.items()}
-        story_flag = True
+    #    # STORY_reverse_lookup - provide story, get index
+    #    STORY_reverse_lookup = {v:k for k, v in STORY_lookup.items()}
+    #    story_flag = True
+
     
     # Get reference to points (only required if point is not referenced
     # in the POINT ASSIGN dictionary)
@@ -824,7 +826,8 @@ def LINE_ASSIGNS_PP(E2K_dict):
 
     # Consolidate all the checks
     MEMBERS_dict = E2K_dict.get('LINE ASSIGNS').get('LINEASSIGN')
-    if MEMBERS_dict and story_flag and nodes_flag and LINES_dict:    
+    #if MEMBERS_dict and story_flag and nodes_flag and LINES_dict:    
+    if MEMBERS_dict and Story_List_dict and nodes_flag and LINES_dict:    
         # Lookup Node_1 & Node_2 and convert into NODE references
         for i, (key, mem_dict) in enumerate(MEMBERS_dict.items()):
             # Check if dictionary has already been processed
@@ -832,19 +835,26 @@ def LINE_ASSIGNS_PP(E2K_dict):
             if mem_dict.get('ID') is not None:
                 break
             #if i<3: print(f'i: {i} | key: {key}')
-            line, story = key
-            line_dict = LINES_dict.get(line)
-            mem_dict['ID'] = i + 1    ###  NB ID is 1-based not 0-based  ###
-            story_index = STORY_reverse_lookup[story]
+            line, story = key  # e.g. (B21, L32)
+            
+            # reference the Line definition to get generic connectivity
+            line_dict = LINES_dict.get(line) 
+            mem_dict['ID'] = i + 1    # set ID ###  NB ID is 1-based not 0-based  ###
+            #story_index = STORY_reverse_lookup[story]
             line_pts = []
             mem_dict['MEMTYPE'] = line_dict.get('Type')
             
+            # Process start and end nodes to reference N1 & N2 from the LINE CONNECTIVITY (the ETABS POINT defs)
+            # and to generate N1 & N2, JT1 & JT2 for the individual line element (BEAM, COLUMN etc)
+            #     NB For the member (memdict), N1, N2 are node ID integers (for use by GSA)
+            #     and JT1, JT2 are the standard ETABS tuple, e.g. (185, 'L3')
             for n in ('1', '2'):
                 point_n, drop_n = line_dict.get('N' + n)
-                if drop_n == 0:
+                if drop_n == 0:    # both ends are on the same story level
                     story_n = story
-                else:
-                    story_n = STORY_lookup.get(story_index - drop_n)
+                else:      # one end is on a different story level
+                    #story_n = STORY_lookup.get(story_index - drop_n)
+                    story_n = rel_story(story, Story_List_dict, drop_n)
                 mem_dict['JT' + n] = (point_n, story_n)
                 
                 ndict = NODES_dict.get((point_n, story_n))
@@ -950,10 +960,10 @@ def AREA_ASSIGNS_PP(E2K_dict):
     
 
     ## == main processes == ##
-    main_key = 'AREA ASSIGNS'
-    sub_key = main_key[:-1].replace(' ','')
-    SHELLS_dict = E2K_dict.get(main_key,{}).get(sub_key,{})
-
+    #main_key = 'AREA ASSIGNS'
+    #sub_key = main_key[:-1].replace(' ','')
+    SHELLS_dict = E2K_dict.get('AREA ASSIGNS',{}).get('AREAASSIGN',{})
+    
     if not SHELLS_dict:
         return
 
@@ -968,14 +978,14 @@ def AREA_ASSIGNS_PP(E2K_dict):
     Story_List_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('Story_Lists',{})
     
     # STORY_lookup - provide index, get story
-    story_flag = False
-    if STORY_dict:
-        STORY_keys = STORY_dict.keys()
-        STORY_lookup = {i+1: story for i, story in enumerate(list(STORY_keys)[::-1])}
-        
-        # STORY_reverse_lookup - provide story, get index
-        STORY_reverse_lookup = {v:k for k, v in STORY_lookup.items()}
-        story_flag = True
+    # story_flag = False
+    # if STORY_dict:
+    #    STORY_keys = STORY_dict.keys()
+    #    STORY_lookup = {i+1: story for i, story in enumerate(list(STORY_keys)[::-1])}
+    #    
+    #    # STORY_reverse_lookup - provide story, get index
+    #    STORY_reverse_lookup = {v:k for k, v in STORY_lookup.items()}
+    #    story_flag = True
     
     # Get reference to points (only required if point is not referenced
     # in the POINT ASSIGN dictionary)
@@ -997,7 +1007,8 @@ def AREA_ASSIGNS_PP(E2K_dict):
     SHELL_PROP_dict = get_E2K_subdict(E2K_dict, main_key, sub_key)    
 
     all_OK = False # Final checks
-    if story_flag and nodes_flag and AREAS_dict:
+    #if story_flag and nodes_flag and AREAS_dict:
+    if Story_List_dict and nodes_flag and AREAS_dict:
         SHELLS_keys  = SHELLS_dict.keys()
 
         # Check if dictionary has already been processed
@@ -1012,7 +1023,7 @@ def AREA_ASSIGNS_PP(E2K_dict):
             area_dict = AREAS_dict.get(area)
             num_pts = area_dict.get('Num')
             SHELLS_dict[key]['ID'] = i + 1    ###  NB ID is 1-based not 0-based  ###
-            story_index = STORY_reverse_lookup[story]
+            #story_index = STORY_reverse_lookup[story]
             area_pts = []
             Nn_list = [str(i+1) for i in range(num_pts)]
             SHELLS_dict[key]['NumPts'] = num_pts
@@ -1023,7 +1034,8 @@ def AREA_ASSIGNS_PP(E2K_dict):
                 if drop_n == 0:
                     story_n = story
                 else:
-                    story_n = STORY_lookup.get(story_index - drop_n)
+                    #story_n = STORY_lookup.get(story_index - drop_n)
+                    story_n = rel_story(story, Story_List_dict, drop_n)
                 SHELLS_dict[key]['JT' + n] = (point_n, story_n)
                 
                 ndict = NODES_dict.get((point_n, story_n))
