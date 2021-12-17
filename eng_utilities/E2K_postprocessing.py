@@ -1125,7 +1125,7 @@ def LOAD_CASES_PP(E2K_dict):
 ## ===  Geometry Post-processing  ===
 ## ==================================
 
-def story_geometry(E2K_dict):
+def story_geometry(E2K_dict, find_loops = False):
     STORY_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('STORY',{})
     NODE_dict = E2K_dict.get('POINT ASSIGNS', {}).get('POINTASSIGN', {})
     LINE_dict = E2K_dict.get('LINE ASSIGNS', {}).get('LINEASSIGN',{})
@@ -1204,25 +1204,26 @@ def story_geometry(E2K_dict):
         #
         
         # Find loops in each story
-        print('loop',end='|')        
-        try:
-            loops_list = all_loops_finder(nc_dict, NODE_Connected_Nodes_dict)
-            polylines = [[nc_dict[node] for node in loop] for loop in loops_list]
-        
-            print('area',end='|')        
-            area = sum(perim_area_centroid(polyline)[0] for polyline in polylines)
-            print('write',end='|')        
-            if MODEL_SUMMARY_dict.get(lower_story) is None:
-                MODEL_SUMMARY_dict[lower_story] = {}
-                MODEL_SUMMARY_dict[lower_story]['Loop_Area_m2'] = area * units_conversion_factor((units.length, 'm'))**2
+        if find_loops:
+            print('loop',end='|')        
+            try:
+                loops_list = all_loops_finder(nc_dict, NODE_Connected_Nodes_dict)
+                polylines = [[nc_dict[node] for node in loop] for loop in loops_list]
             
-            if len(sum(loops_list,[])) > 0:
-                DIAPHRAGM_LOOPS_dict[lower_story] = loops_list.copy()
-        except:
-            print('loop_failed',end='|')        
-        
-        print('end')        
-        
+                print('area',end='|')        
+                area = sum(perim_area_centroid(polyline)[0] for polyline in polylines)
+                print('write',end='|')        
+                if MODEL_SUMMARY_dict.get(lower_story) is None:
+                    MODEL_SUMMARY_dict[lower_story] = {}
+                    MODEL_SUMMARY_dict[lower_story]['Loop_Area_m2'] = area * units_conversion_factor((units.length, 'm'))**2
+                
+                if len(sum(loops_list,[])) > 0:
+                    DIAPHRAGM_LOOPS_dict[lower_story] = loops_list.copy()
+            except:
+                print('loop_failed',end='|')        
+            
+            print('end')        
+            
 
 
 def connectivity_dict_builder(edge_list, as_edges=False):
