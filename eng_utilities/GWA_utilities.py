@@ -392,6 +392,7 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False):
         print(f'**Non-standard units**: \nCheck derived unit and factors based on {units}:')
         print(f'\tStress units: {stress_units}, {stress_factor}\n\tMass units: {mass_units}, {mass_factor}')
     
+    # SLAB_PROPS_dict, DECK_PROPS_dict, WALL_PROPS_dict, ('SLAB PROPERTIES', 'SHELLPROP'), ('DECK PROPERTIES', 'SHELLPROP'), ('WALL PROPERTIES', 'SHELLPROP'),
     MAT_PROPS_dict, FRAME_PROPS_dict, SHELL_PROPS_dict, SPRING_PROPS_dict = [
         E2K_dict.get(k1,{}).get(k2,{}) for k1, k2 in (
         ('MATERIAL PROPERTIES', 'MATERIAL'), 
@@ -525,15 +526,25 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False):
         # ============================
         # ===== Shell Properties =====
         # ============================
-        
+        # for calculating mat_type
+        # mat_type_dict = {'steel': 'Steel', 'concrete': 'Concrete'} #, FRP, ALUMINIUM, GLASS, TIMBER, GENERIC, FABRIC}
+        shell_type_dict = {'shell': 'SHELL', 'membrane': 'STRESS'}
         # Area properties
         # PROP_2D.1 | num | name | axis | mat | type | thick | mass | bending
+        # PROP_2D.8 | num | name | colour | type | axis | mat | mat_type | grade | design | profile | ref_pt | ref_z | mass | flex | shear | inplane | weight |
+        # PROP_2D.8 | num | name | colour | LOAD | support | edge
+        # PROP_2D.2 | num | name | colour | axis | mat | type | thick | mass | bending | inplane | weight
+        # PROP_2D.8	1	S250	NO_RGB	SHELL	LOCAL	1	GENERIC	0	0	250(mm)	CENTROID	0	0	100%	-0%	100%	100%
         for sp_name, sp_dict in SHELL_PROPS_dict.items():
             sp_ID = sp_dict.get('ID', '')
+            m_name = sp_dict.get('MATERIAL', sp_dict.get('CONCMATERIAL', ''))
+            m_dict = MAT_PROPS_dict.get(m_name, {})
+            m_ID = m_dict.get('ID', 1)
             desc = sp_dict.get('GWA', 'EXPLICIT')
+            shell_type = shell_type_dict.get((sp_dict.get('TYPE', 'shell').lower()))
             thickness = max([sp_dict.get(t, 0) for t in ['SLABTHICKNESS', 'WALLTHICKNESS','DECKTHICKNESS']])
-            ostr = ['PROP_2D.2',str(sp_ID), sp_name,'NO_RGB','LOCAL','1',
-                    'SHELL',str(thickness),'0.0','100.0%','100.0%','100.0%']
+            ostr = ['PROP_2D.2',str(sp_ID), sp_name, 'NO_RGB', 'LOCAL', str(m_ID),
+                    shell_type, str(thickness), '0.0', '100.0%', '100.0%', '100.0%']
             # '.format(fa, name, 'LOCAL', 1, thickness))
             #gwa.write('PROP_SEC.2\t{:d}\t{:s}\t\t{:s}\t{:s}\n'.format(fp, name, '', desc))
             gwa.write('\t'.join(ostr) + '\n')
@@ -601,6 +612,16 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False):
         #      | is_rls { | rls { | k } } off_x1 | off_x2 | off_y | off_z | dummy | parent
         # EL.4  1       NO_RGB  BEAM    1   1   1   2   0   0   NO_RLS  0   0   0   0
         # NO_RLS | RLS | STIFF  - F, R, K
+        # 
+        # MEMB.8 | num | name | colour | type (1D) | exposure | prop | group | topology | node | angle | mesh_size | is_intersector | analysis_type 
+        #        | fire | limiting_temperature | time[4] | dummy | rls_1 { | k_1 } rls_2 { | k_2 } | restraint_end_1 | restraint_end_2 | AUTOMATIC | load_height | load_ref | is_off { | auto_off_x1 | auto_off_x2 | off_x1 | off_x2 | off_y | off_z }
+        # MEMB.8	12	"('B51', 'R/F')"	NO_RGB	1D_GENERIC	ALL	3	3	77 113 72	0	0	0	YES	BEAM	
+        #   0	0	0	0	0	0	ACTIVE	FFFFFF	FFFFFF	Free	Free	AUTOMATIC	0	SHR_CENTRE	OFF	MAN	MAN	0	0	0	-0.3
+        # member type: BEAM, COLUMN, GENERIC_1D, SLAB, WALL, GENERIC_2D, VOID_CUTTER_1D, VOID_CUTTER_2D	
+        bm_type_dict = {'BEAM':'BEAM', 'BRACE':'BEAM', 'COLUMN': 'COLUMN', 'LINE': '1D_GENERIC'}
+        # mat material type: STEEL, CONCRETE, FRP, ALUMINIUM, TIMBER, GLASS
+        #
+        
         
         # ** Writing Beams to GWA **
         bm_ID_max = max(bm_dict.get('ID',0) for bm_dict in LINE_dict.values())
@@ -613,6 +634,7 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False):
             N1 = bm_dict.get('N1', '')
             N2 = bm_dict.get('N2', '')
             bm_angle = bm_dict.get('ANG', 0)
+            bm_type = bm_dict.get('MEMTYPE', '')
             frame_prop_name = bm_dict.get('SECTION', None)
             fp_dict = FRAME_PROPS_dict.get(frame_prop_name, {})
             prop_num = fp_dict.get('ID', 1)
@@ -629,6 +651,7 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False):
                 bm_ids = [bm_ID] + new_ids
                 bm_dict['ELEMENT_IDS'] = tuple(bm_ids)
             else:
+                nds = [N1, N2]
                 node_pairs = [(N1, N2)]
                 bm_ids = [bm_ID]
 
@@ -676,6 +699,8 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False):
             #        N1, N2, '', bm_angle, ]]
             #gwa.write('EL.2\t{:d}\t{:s}\t\t{:s}\t{:d}\t{:d}\t{}\t{}\t\t{:f}\n'.format(b + 1, bm_name, 'BEAM', prop_num, prop_num, ndict.get(pt_1), ndict.get(pt_2),bm_angle))
             #gwa.write('\t'.join(ostr2) + '\n')
+            
+            # EL.4	224	"('C26', 'R/F')"	NO_RGB	BEAM	2	2	291	78	0	45	NO_RLS	0	0	0	0	DUMMY	37
             for beam_ID, (n_i, n_j), rel_txt in zip(bm_ids, node_pairs, releases_txt):
                 dummy = '\tDUMMY' if prop_num == 1 else ''
                 ostr4 = [str(val) for val in ['EL.4', str(beam_ID), bm_name, 'NO_RGB', 'BEAM', 
@@ -683,19 +708,48 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False):
                 if n_i != n_j:  # TODO: identify and eliminate the generation of these extra nodes
                     gwa.write('\t'.join(ostr4 + [rel_txt] + [offsets_txt]) + dummy + '\n')
             bm_max = max(bm_max, bm_dict.get('ID', 0))
+
+            # ========================
+            # Writing 1D members...
+            # MEMB.8 | num | name | colour | type (1D) | exposure | prop | group | topology | node | angle | mesh_size | is_intersector | analysis_type 
+            #        | fire | limiting_temperature | time[4] | dummy | rls_1 { | k_1 } rls_2 { | k_2 } | restraint_end_1 | restraint_end_2 | AUTOMATIC | load_height | load_ref | is_off { | auto_off_x1 | auto_off_x2 | off_x1 | off_x2 | off_y | off_z }
+            # MEMB.8	12	"('B51', 'R/F')"	NO_RGB	1D_GENERIC	ALL	3	3	77 113 72	0	0	0	YES	BEAM	
+            #   0	0	0	0	0	0	ACTIVE	FFFFFF	FFFFFF	Free	Free	AUTOMATIC	0	SHR_CENTRE	OFF	MAN	MAN	0	0	0	-0.3
+            el_type = bm_type_dict.get(bm_type,'1D_GENERIC')
+            dummy = 'ACTIVE' if dummy == '' else 'DUMMY'
+            # MAXSTASPC 500 AUTOMESH "YES"  MESHATINTERSECTIONS "YES"  FLOORMESH "Yes"
+            is_intersector = 'YES' if bm_dict.get('AUTOMESH', 0) == 'YES' else 'NO' 
+            mesh_size = 0 # bm_dict.get('ID', 0)
+            ostr5 = [str(val) for val in ['MEMB.8', str(beam_ID), bm_name, 'NO_RGB', el_type, 
+                        'ALL', prop_num, prop_num, ' '.join([str(nd) for nd in nds]), '', 
+                        bm_angle, mesh_size, is_intersector, 'BEAM', 0, 0, 0, 0, 0, 0, dummy, ]]
+            # TODO: these additional pieces of information do not work - perhaps Free, Free should not be there if NO_RLS
+            #ostr6 = [str(val) for val in ['Free', 'Free', 'AUTOMATIC', 0, 'SHR_CENTRE', 'OFF', 'MAN', 'MAN'] ]           
+            # TODO: identify and eliminate the generation of extra nodes
+            gwa.write('\t'.join(ostr5 + [rel_txt]) + '\n') # + ostr6 + [offsets_txt]) + '\n')
+
         print('Max beam ID is:', bm_max)
         
         
         # ========================
         # =====    Shells    =====
         # ========================
+        # parent is the parent member number
         # EL.2 | num | name | colour | type | prop | group | topo() | orient_node | orient_angle | is_rls { | rls { | k } } is_offset { | ox | oy | oz } | dummy
-        # EL.4  1       NO_RGB  BEAM    1   1   1   2   0   0   NO_RLS  0   0   0   0
+        # EL.4 | num | name | colour | type | prop | group | topo() | orient_node | orient_angle | is_rls { | rls { | k } } off_x1 | off_x2 | off_y | off_z | dummy | parent
+        # EL.4  1    el_name   NO_RGB  BEAM    1   1   1   2   0   0   NO_RLS  0   0   0   0
+        # element type: BAR, BEAM, TIE, STRUT, SPRING, GRD_SPRING, LINK, DAMPER, GRD_DAMPER, CABLE, SPACER, MASS, GROUND, TRI3, TRI6, QUAD4, QUAD8, BRICK8
+        # 
+        # member type: BEAM, COLUMN, GENERIC_1D, SLAB, WALL, GENERIC_2D, VOID_CUTTER_1D, VOID_CUTTER_2D	
+        sh_type_dict = {'FLOOR':'SLAB', 'RAMP':'SLAB', 'PANEL': 'WALL', 'AREA': '2D_GENERIC'}
+        # mat material type: STEEL, CONCRETE, FRP, ALUMINIUM, TIMBER, GLASS
+        #
         # ** Writing Beams to GWA **
         memb_i = 1
         sh_max = bm_max
         for sh_name, sh_dict in AREA_dict.items():
             sh_ID = sh_dict.get('ID', '')
+            sh_type = sh_dict.get('MEMTYPE', '')
             num_pts = sh_dict.get('NumPts')
             nodes = [sh_dict.get('N'+str(n+1), '') for n in range(num_pts)]
             nodes_string = '\t'.join([str(n) for n in nodes])
@@ -719,17 +773,36 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False):
                 ostr = ['EL.2', bm_max + sh_ID, sh_name, 'NO_RGB', 'QUAD4', 
                     prop_num, prop_num, nodes_string]
                 gwa.write('\t'.join([str(val) for val in ostr]) + '\n')
-            else:
+            
+            # ======================================================
+            # Edited to cause all shells to be written to 2D members
+            # MEMB.8 | num | name | colour | type (2D) | exposure | prop | group | topology | node | angle | mesh_size | is_intersector | analysis_type 
+            #        | fire | limiting_temperature | time[4] | dummy | off_z | off_auto_internal | reinforcement2d |
+            # MEMB.8	1	Shell F2 (ID: 48) @ G/F	NO_RGB	SLAB	ALL	1	1	214 216 28 29 30 215	0	0	0	NO	LINEAR
+            # 	0	0	0	0	0	0	ACTIVE	0	NO	REBAR_2D.1	0.03	0.03	0
+            # OBJMESHTYPE ("AUTOMESH"), MESHAT ("BEAMS" | "WALLS"), MAXMESHSIZE
+            mesh_size = sh_dict.get('MAXMESHSIZE', 0)
+            is_intersector = 'YES' if sh_dict.get('OBJMESHTYPE', '') == 'AUTOMESH' else 'NO'
+            analysis_type = 'LINEAR'
+            # dummy = '\tDUMMY' if prop_num == 1 else ''
+            dummy = 'DUMMY' if prop_num == 1 else 'ACTIVE'
+            
+            if num_pts > 2:
                 # Create polygonal members for n-gon with n > 4 
-                el_type = 'SLAB'
+                el_type = sh_type_dict.get(sh_type,'2D_GENERIC')
+                if sh_dict.get('OPENING', '') == 'YES':
+                    el_type = 'VOID_CUTTER_2D'
                 el_name, story_name = sh_name
                 pname = f'Shell {el_name} (ID: {sh_ID}) @ {story_name}'
-                # MEMB.8	1	fred	NO_RGB	SLAB	ALL	1	1	node_list	0	0	0	YES
-                ostr = [str(val) for val in ['MEMB.8', memb_i , pname, 'NO_RGB', el_type, 'ALL', prop_num, 1, nodes_string.replace('\t', ' ')]]
+                # MEMB.8	1	name	NO_RGB	SLAB	ALL	1	1	node_list	0	0	0	YES
+                ostr = [str(val) for val in ['MEMB.8', bm_max + sh_ID , pname, 'NO_RGB', el_type, 'ALL', prop_num, 1, 
+                        nodes_string.replace('\t', ' '), 0, 0, mesh_size, is_intersector, analysis_type, 
+                        0,0,0,0,0,0, dummy]]
                 gwa.write('\t'.join(ostr) + '\n')
-                memb_i += 1
+                #memb_i += 1
             sh_max = bm_max + sh_ID
-        memb_max = memb_i
+        
+        memb_max = sh_max
         print('Max shell_ID is:', sh_max)
         
         
@@ -856,7 +929,7 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False):
                 for j, loop_string in enumerate(loop_strings):
                     pname = f'Perimeter {j+1} @ {story_name}'
                     # MEMB.8	1	fred	NO_RGB	SLAB	ALL	1	1	node_list	0	0	0	YES
-                    ostr = [str(val) for val in ['MEMB.8', el_max + perim_i , pname, 'NO_RGB', 'SLAB', 'ALL', p_max, 1, loop_string]]
+                    ostr = [str(val) for val in ['MEMB.8', perim_i , pname, 'NO_RGB', 'SLAB', 'ALL', p_max, 1, loop_string]]
                     gwa.write('\t'.join(ostr) + '\n')
                     perim_i += 1
                 
