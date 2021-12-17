@@ -467,7 +467,7 @@ def E2KtoDict_test(text):
 ## ===  Combined E2K Processes  ===
 ## ================================
 
-def process_E2K_dict(E2K_dict):
+def process_E2K_dict(E2K_dict, find_loops=False):
     """Carries out all the post-processing of the parsed E2K file
     Most importantly, this adds quantities in a new dictionary"""
     FILE_PP(E2K_dict)
@@ -490,7 +490,7 @@ def process_E2K_dict(E2K_dict):
     LOAD_CASES_PP(E2K_dict) # post processing STATIC LOADS or LOAD PATTERNS
     #LINE_LOAD_PP(E2K_dict)
     MEMBER_quantities_summary(E2K_dict)
-    story_geometry(E2K_dict)
+    story_geometry(E2K_dict, find_loops=find_loops)
     """try:
         story_geometry(E2K_dict)
     except:
@@ -500,7 +500,7 @@ def process_E2K_dict(E2K_dict):
     print('Post-processing finished')
     
 
-def run_all(E2K_model_path, get_pickle=False, **kwargs):
+def run_all(E2K_model_path, get_pickle=False, find_loops=False, **kwargs):
     """Runs all functions for parsing and post-processing an ETABS text file
     It returns a dictionary that is in the format of the text file.
     Since processing can be time-consuming, it pickles the output 
@@ -516,7 +516,7 @@ def run_all(E2K_model_path, get_pickle=False, **kwargs):
         E2K_dict = E2KtoDict(E2K_model_path, **kwargs)
         pickle.dump(E2K_dict, open(pickle_path, 'wb'))
     
-    process_E2K_dict(E2K_dict)
+    process_E2K_dict(E2K_dict, find_loops=find_loops)
     
     try:
         pickle.dump(E2K_dict, open(pickle_path_2, 'wb'))
