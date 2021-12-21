@@ -21,15 +21,14 @@ TODO:
 - add section pools (20%)
 - add buckling restrained beams (10%)
 - embedded sections (80%)
-- NONE sections -> dummy
 - check deck properties
-
-Note: At the moment there is no log kept of elements that do not "make sense".
-This could be useful for identifying how complete the record is.
+- add logging: At the moment there is no log kept of elements that do not "make sense".
+  This could be useful for identifying how complete the record is.
 
 DONE:
 - split beams at intersections (100%)
 - add point and area loads (including point loads on beams) (100%)
+- NONE sections -> dummy
 
 """
 
@@ -85,7 +84,7 @@ def gather(data):
 
 
 # If top-level dict matches first item and sub-dict doesn't, then 
-def try_branch(a_dict, data_coll):
+def try_branch(a_dict, data_coll, debug=False, keyword=''):
     """When provided with a bunched line, it sets up  
     dictionaries and subdictionaries in a tree structure
     based on branching.
@@ -101,7 +100,7 @@ def try_branch(a_dict, data_coll):
         #print(f'{a}  found')
         #print(f'OK : {a_dict[a]}  {b}  -> {a_dict[a].get(b)} therefore, try_merge')
         b_dict = a_dict[a][b]
-        try_merge(b_dict, data_coll[1:])
+        try_merge(b_dict, data_coll[1:], debug=debug, keyword=keyword)
         a_dict[a][b] = b_dict.copy()
     else:  # try_branch (tested)
         #print(f'{a}  found')
@@ -109,22 +108,24 @@ def try_branch(a_dict, data_coll):
         a_dict[a][b] = {k:v for k, v in data_coll[1:]}
 
 
-def try_merge(a_dict, data_coll):
+def try_merge(a_dict, data_coll, debug=False, keyword=''):
     """When the line of data has a key that matches an existing one
     it merges the data into the dictionary under the existing key"""
     try:
         ## - Snip start
         if not isinstance(data_coll, (list, tuple)):
-            print(f'In try_merge, data_coll is {data_coll}')
+            if debug:
+                print(f'In try_merge ({keyword}), data_coll is {data_coll} (type: {type(data_coll)})')
         elif not isinstance(data_coll[0], (list, tuple)):
-            print(f'In try_merge, data_coll is {data_coll}')
+            if debug:
+                print(f'In try_merge ({keyword}), data_coll[0] is {data_coll} (type: {type(data_coll[0])})')
         elif data_coll[0][0] == 'SHAPE':
             # c_dict = a_dict.copy()
-            try_branch(a_dict, data_coll)
+            try_branch(a_dict, data_coll, debug=debug, keyword=keyword)
             return
         ## - Snip end
     except:
-        print(f'WARNING: ** In try_merge, data_coll is {data_coll}')
+        print(f'WARNING: ** In try_merge ({keyword}), data_coll is {data_coll} (type: {type(data_coll)})')
         print('WARNING: (cont\'d)) Possibly a case of "IndexError: tuple index out of range" **')
 
     for data in data_coll:
@@ -154,15 +155,16 @@ def try_merge(a_dict, data_coll):
             a_dict[data[0]] = data[1]
 
 
-def load_func(the_dict, line): # a_dict is 
+def load_func(the_dict, line, debug=False): # a_dict is 
     loadclass = line[0][0]
     member, story = line[0][1]
     line_dict = dict(line)
     key = tuple([member, story, line_dict.get('LC')])
     
-    if not the_dict.get(loadclass):
+    if the_dict.get(loadclass) is None:
         the_dict[loadclass] = dict()
-        print(f'Starting to parse {loadclass}')
+        if debug:
+            print(f'Starting to parse {loadclass}')
     a_dict = the_dict[loadclass]
     #print('a_dict', a_dict)
     a_dict[key] = a_dict.get(key, []) + list(load_parser(line_dict))
@@ -243,7 +245,7 @@ def add_to_dict_list(the_dict, key, value):
     the_dict[key] = value_list
 
 
-def story_func(the_dict, line):
+def story_func(the_dict, line, debug=False):
     """
     One of the challenges is that if a Tower has been defined
     this needs to be carried over from any previous lines (it
@@ -291,7 +293,8 @@ def story_func(the_dict, line):
     # if the story is not already in the dictionary, add it
     if a_dict.get(story_name) is None:
         a_dict[story_name] = {**line_dict}
-        print(f'...adding {story_name} to {line_key} to STORY_dict')
+        if debug:
+            print(f'...adding {story_name} to {line_key} to STORY_dict')
         
     else:   # update
         a_dict.update({k:v for k,v in line_dict.items()})
@@ -303,7 +306,7 @@ def story_func(the_dict, line):
 # ======  Main Parsing Function ======
 # ====================================
 
-def E2KtoDict(E2K_model_path, **kwargs):
+def E2KtoDict(E2K_model_path, debug=False, **kwargs):
     """Parses E2K text files and returns a dictionary.
     
     kwargs can be used to pass information into the function
@@ -319,7 +322,11 @@ def E2KtoDict(E2K_model_path, **kwargs):
         (dict): a dictionary containing parsed data from the ETABS text file
             This data is compatible with JSON and may be stored in this format.
     """
-    debug = kwargs.get('Debug', False)
+    debug = kwargs.get('Debug', False) or debug
+    
+    if debug:
+        print('\n===== Start parsing E2K text file ==========')
+    
     E2K_dict = dict()
     # the_dict = E2K_dict
 
@@ -337,7 +344,7 @@ def E2KtoDict(E2K_model_path, **kwargs):
                 # Point `the_dict` to the relevant entry in E2K_dict
                 the_dict = E2K_dict[key] 
                 # Identify which parsing function to use
-                the_func = try_branch
+                the_func = lambda x, y: try_branch(x, y, debug=debug, keyword=key)
 
             #elif line.startswith(r'$ POINT COORDINATES'):
             # print(f'Starting to process {line.strip()} *')
@@ -348,27 +355,30 @@ def E2KtoDict(E2K_model_path, **kwargs):
             #    the_func = point_parse
             
             elif line.startswith(r'$ STORIES - IN SEQUENCE FROM TOP'):
-                print(f'Starting to process {line.strip()} *')
+                if debug:
+                    print(f'Starting to process {line.strip()} *')
                 ignore_lines = False
                 key = 'STORIES - IN SEQUENCE FROM TOP' # line[2:].strip() # removes `$ `
                 E2K_dict[key] = dict()
                 the_dict = E2K_dict[key]
-                the_func = story_func
+                the_func = lambda x, y: story_func(x, y, debug=debug)
             
             elif (line.startswith(r'$ POINT OBJECT LOADS') or 
                     line.startswith(r'$ FRAME OBJECT LOADS') or 
                     line.startswith(r'$ LINE OBJECT LOADS') or 
                     line.startswith(r'$ SHELL OBJECT LOADS') or
                     line.startswith(r'$ AREA OBJECT LOADS')):
-                print(f'Starting to process {line.strip()} *')
+                if debug:
+                    print(f'Starting to process {line.strip()} *')
                 ignore_lines = False
                 key = line[2:].strip() # removes `$ `
                 E2K_dict[key] = dict()
                 the_dict = E2K_dict[key]
-                the_func = load_func
+                the_func = lambda x, y: load_func(x, y, debug=debug)
             
             elif line.startswith(r'$ LOAD COMBINATIONS'):
-                print(f'Starting to process {line.strip()} *')
+                if debug:
+                    print(f'Starting to process {line.strip()} *')
                 ignore_lines = False
                 key = line[2:].strip()
                 E2K_dict[key] = dict()
@@ -377,12 +387,13 @@ def E2KtoDict(E2K_model_path, **kwargs):
             
             # Default parsing set up
             elif line.startswith(r'$'):
-                print(f'Starting to process {line.strip()}')
+                if debug:
+                    print(f'Starting to process {line.strip()}')
                 ignore_lines = False
                 key = line[2:].strip()
                 E2K_dict[key] = dict()
                 the_dict = E2K_dict[key]
-                the_func = try_branch
+                the_func = lambda x, y: try_branch(x, y, debug=debug, keyword=key)
 
             elif line.strip() == '':
                 # Ignore blank lines
@@ -397,12 +408,14 @@ def E2KtoDict(E2K_model_path, **kwargs):
                     the_func(the_dict, dc)  # the active dictionary is modified
     
     if debug:
+        print(f'\n** E2K_dict Summary (E2KtoDict) ****')
         for k,v in E2K_dict.items():
             print(k)
             if len(v) < 6:
                 [print(f'{len(vv):7d}  : {kk}') for kk, vv in v.items()]
             else:
                 print(f'{len(v):7d}  : {k}')
+        print('===== Finished parsing E2K file to E2K_dict ==========')
     return E2K_dict
 
 
@@ -467,56 +480,63 @@ def E2KtoDict_test(text):
 ## ===  Combined E2K Processes  ===
 ## ================================
 
-def process_E2K_dict(E2K_dict, find_loops=False):
+def process_E2K_dict(E2K_dict, find_loops=False, debug=False):
     """Carries out all the post-processing of the parsed E2K file
     Most importantly, this adds quantities in a new dictionary"""
-    FILE_PP(E2K_dict)
-    PROGRAM_PP(E2K_dict)
-    CONTROLS_PP(E2K_dict)
-    STORIES_PP(E2K_dict)
-    MAT_PROPERTIES_PP(E2K_dict)
+    print('\n===== Starting Post-processing ==========')
+    
+    FILE_PP(E2K_dict, debug=debug)
+    PROGRAM_PP(E2K_dict, debug=debug)
+    CONTROLS_PP(E2K_dict, debug=debug)
+    STORIES_PP(E2K_dict, debug=debug)
+    MAT_PROPERTIES_PP(E2K_dict, debug=debug)
     section_def_dict = build_section_dict()
-    FRAME_SECTIONS_PP(E2K_dict, section_def_dict)
-    ENCASED_SECTIONS_PP(E2K_dict)
-    SD_SECTIONS_PP(E2K_dict)
+    FRAME_SECTIONS_PP(E2K_dict, section_def_dict, debug=debug)
+    ENCASED_SECTIONS_PP(E2K_dict, debug=debug)
+    SD_SECTIONS_PP(E2K_dict, debug=debug)
     # NONPRISMATIC_SECTIONS_PP(E2K_dict) # TODO
-    SHELL_PROPERTIES_PP(E2K_dict)
-    POINTS_PP(E2K_dict)
-    POINT_ASSIGNS_PP(E2K_dict)
-    LINE_CONN_PP(E2K_dict)
-    LINE_ASSIGNS_PP(E2K_dict)
-    AREA_CONN_PP(E2K_dict)
-    AREA_ASSIGNS_PP(E2K_dict)
-    LOAD_CASES_PP(E2K_dict) # post processing STATIC LOADS or LOAD PATTERNS
-    #LINE_LOAD_PP(E2K_dict)
-    MEMBER_quantities_summary(E2K_dict)
-    story_geometry(E2K_dict, find_loops=find_loops)
+    SHELL_PROPERTIES_PP(E2K_dict, debug=debug)
+    POINTS_PP(E2K_dict, debug=debug)
+    POINT_ASSIGNS_PP(E2K_dict, debug=debug)
+    LINE_CONN_PP(E2K_dict, debug=debug)
+    LINE_ASSIGNS_PP(E2K_dict, debug=debug)
+    AREA_CONN_PP(E2K_dict, debug=debug)
+    AREA_ASSIGNS_PP(E2K_dict, debug=debug)
+    LOAD_CASES_PP(E2K_dict, debug=debug) # post processing STATIC LOADS or LOAD PATTERNS
+    #LINE_LOAD_PP(E2K_dict, debug=debug)
+    MEMBER_quantities_summary(E2K_dict, debug=debug)
+    story_geometry(E2K_dict, find_loops=find_loops, debug=debug)
     """try:
         story_geometry(E2K_dict)
     except:
         print('"story_geometry" failed')"""
     # LOADS   # TODO
     # GROUPS  # TODO
-    print('Post-processing finished')
+    print('===== Post-processing finished ==========')
     
 
-def run_all(E2K_model_path, get_pickle=False, find_loops=False, **kwargs):
+def run_all(E2K_model_path, get_pickle=False, find_loops=False, debug=False, **kwargs):
     """Runs all functions for parsing and post-processing an ETABS text file
     It returns a dictionary that is in the format of the text file.
     Since processing can be time-consuming, it pickles the output 
     and will preferentially unpickle if 'get_pickle' is True"""
-    debug = kwargs.get('Debug', False)
+    debug = kwargs.get('Debug', False) or debug
     
     pickle_path = splitext(E2K_model_path)[0] + '.pkl'
     pickle_path_2 = splitext(E2K_model_path)[0] + '_2.pkl'
     
     if exists(pickle_path) and get_pickle == True:
+        if debug:
+            print('** Extracting E2K_dict from pickle file ***')
         E2K_dict = pickle.load(open(pickle_path, 'rb'))
     else:
-        E2K_dict = E2KtoDict(E2K_model_path, **kwargs)
+        if debug:
+            print('** Parsing E2K file... ***')
+        E2K_dict = E2KtoDict(E2K_model_path, debug=debug, **kwargs)
         pickle.dump(E2K_dict, open(pickle_path, 'wb'))
     
-    process_E2K_dict(E2K_dict, find_loops=find_loops)
+    print(f'run_all passing to process_E2K_dict, debug = {debug}')
+    process_E2K_dict(E2K_dict, find_loops=find_loops, debug=debug)
     
     try:
         pickle.dump(E2K_dict, open(pickle_path_2, 'wb'))
@@ -524,6 +544,7 @@ def run_all(E2K_model_path, get_pickle=False, find_loops=False, **kwargs):
         print('second pickle dump failed')
 
     if debug:
+        print(f'\n** E2K_dict Final Summary (run_all) ****')
         for k,v in E2K_dict.items():
             print(k)
             if isinstance(v, dict):
