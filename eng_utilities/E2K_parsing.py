@@ -24,6 +24,8 @@ TODO:
 - check deck properties
 - add logging: At the moment there is no log kept of elements that do not "make sense".
   This could be useful for identifying how complete the record is.
+- LINECURVEDATA - just found it and I didn't know what it was...
+- sort out situation where embed is an SD section
 
 DONE:
 - split beams at intersections (100%)
@@ -96,12 +98,16 @@ def try_branch(a_dict, data_coll, debug=False, keyword=''):
     if try_1 is None:  # if there isn't an entry already
         #print(f'{a} Not found, add {a}:, {b}: & {data_coll[1:]}')
         a_dict[a] = {b:{k:v for k, v in data_coll[1:]}}
+    
     elif a_dict[a].get(b) is not None:  #  try_merge
         #print(f'{a}  found')
         #print(f'OK : {a_dict[a]}  {b}  -> {a_dict[a].get(b)} therefore, try_merge')
         b_dict = a_dict[a][b]
-        try_merge(b_dict, data_coll[1:], debug=debug, keyword=keyword)
-        a_dict[a][b] = b_dict.copy()
+        if b_dict == dict(data_coll[1:]): # ignore repeated lines
+            pass
+        else:
+            try_merge(b_dict, data_coll[1:], debug=debug, keyword=keyword)
+            a_dict[a][b] = b_dict.copy()
     else:  # try_branch (tested)
         #print(f'{a}  found')
         #print(f'Not: {a_dict[a]}  {b}  -> {a_dict[a].get(b)}')
@@ -483,7 +489,7 @@ def E2KtoDict_test(text):
 def process_E2K_dict(E2K_dict, find_loops=False, debug=False):
     """Carries out all the post-processing of the parsed E2K file
     Most importantly, this adds quantities in a new dictionary"""
-    print('\n===== Starting Post-processing ==========')
+    if debug: print('\n===== Starting Post-processing ==========')
     
     FILE_PP(E2K_dict, debug=debug)
     PROGRAM_PP(E2K_dict, debug=debug)
@@ -512,7 +518,7 @@ def process_E2K_dict(E2K_dict, find_loops=False, debug=False):
         print('"story_geometry" failed')"""
     # LOADS   # TODO
     # GROUPS  # TODO
-    print('===== Post-processing finished ==========')
+    if debug: print('===== Post-processing finished ==========')
     
 
 def run_all(E2K_model_path, get_pickle=False, find_loops=False, debug=False, **kwargs):
@@ -535,7 +541,7 @@ def run_all(E2K_model_path, get_pickle=False, find_loops=False, debug=False, **k
         E2K_dict = E2KtoDict(E2K_model_path, debug=debug, **kwargs)
         pickle.dump(E2K_dict, open(pickle_path, 'wb'))
     
-    print(f'run_all passing to process_E2K_dict, debug = {debug}')
+    if debug: print(f'run_all passing to process_E2K_dict, debug = {debug}')
     process_E2K_dict(E2K_dict, find_loops=find_loops, debug=debug)
     
     try:
