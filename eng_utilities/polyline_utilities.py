@@ -359,8 +359,10 @@ def collinearity2D(
     line1, line2, 
     line_format='pt_pt',
     is_inclusive=True, 
-    tol=0.01, angtol=0.001,
-    check_parallel=True):
+    tol_length=0.01, angtol=0.001,
+    check_parallel=True,
+    debug=False,
+    tag = ''):
     """Identifies collinearity and overlap between two lines
     that have already been identified as parallel.
     
@@ -379,6 +381,16 @@ def collinearity2D(
     1. they are both oriented in the first quadrant and 
     2. line1 starts at a lower x-coordinate and 
     3. line1 is longer than line2
+
+    Args:
+        line1 (tuple): either pt-pt format or pt-vector format
+        line2 (tuple): either pt-pt format or pt-vector format
+        line_format (str): either 'pt_pt' or 'pt_vec'
+        is_inclusive (bool): if True, then intersections at the ends will be included as intersections
+        tol_length (float): is assumed to be a length tolerance and the default is 0.01 (assumed to be in metres)
+        check_parallel (bool): carry out checks to see if lines are parallel
+        debug (bool): do debug printing
+        tag (str): information carried into the function for use in debugging (e.g. beam name)
     """
     less_than = le if is_inclusive else lt
 
@@ -391,8 +403,9 @@ def collinearity2D(
     
     # check that lines really are parallel 
     # (this should be verified by the functions before calling this)
-    if abs(abs(ang1) - abs(ang2)) > (1.0 + 1E-6) * angtol:
-        err_msg = f'angles of line1 ({ang1}rad) and line2 ({ang2}rad) should be within tolerance ({angtol}rad) of each other'
+    if abs(abs(ang1) - abs(ang2)) > (1.0 + 1E-6) * angtol and debug == True:
+        txt = '' if tag == '' else f'[{tag}] ' 
+        err_msg = f'{txt}angles of line1 ({ang1}rad) and line2 ({ang2}rad) should be within tolerance ({angtol}rad) of each other'
         if check_parallel == True:
             raise ValueError(err_msg)
         else:
@@ -409,7 +422,7 @@ def collinearity2D(
     
     # check whether offset (parallel but not collinear)
     mag21, ang21, *_ = cart2cyl(subNDx(pt2, pt1, limit=3))
-    if abs(mag21 * (ang21 - ang1)) > tol:
+    if abs(mag21 * (ang21 - ang1)) > tol_length:
         # lines are offset
         return 'anti-parallel' if p_fac == -1 else 'parallel'
     
@@ -430,11 +443,12 @@ def collinearity2D(
         else:    # the end of line2 is outside line1 - overlap
             return 'overlapping'
     
-    print(f'error in collinearity2D, \nline1: {line1}, \nline2: {line2}, \ntype: {line_format}')
+    if debug:
+        print(f'** error in collinearity2D, \nline1: {line1}, \nline2: {line2}, \ntype: {line_format}')
     return 'error'
 
 
-def line_intersection2D(line1, line2, is_inclusive=True, tol=0.01, angtol=0.001):
+def line_intersection2D(line1, line2, is_inclusive=True, tol_length=0.01, angtol=0.001, debug=False, tag=''):
     """Returns a dictionary of any intersection when 
     provided with two lines (each defined as a pair of tuples).
     
@@ -475,7 +489,7 @@ def line_intersection2D(line1, line2, is_inclusive=True, tol=0.01, angtol=0.001)
         line2 (list):
         is_inclusive (bool): whether Note that this does not affect
             the `touching` checks which are assumed to be inclusive
-        tol (float): Tolerance for 0.01
+        tol_length (float): Tolerance for (default is 0.01, assuming units of metres)
         angtol (float): Angular tolerance for parallel check (default 0.001)
 
     Result: 
@@ -489,7 +503,7 @@ def line_intersection2D(line1, line2, is_inclusive=True, tol=0.01, angtol=0.001)
 
     p1, v1 = line1[0], subNDx(line1[1], line1[0])
     p2, v2 = line2[0], subNDx(line2[1], line2[0])
-    mag1, mag2 = [magNDx(v) for v in (v1, v2)]
+    mag1, mag2 = [magNDx(v) for v in (v1, v2)] # lengths
     maxmag = max(mag1, mag2)
     
     # NB cross product is v1[0]*v2[1] - v1[1]*v2[0]
@@ -501,14 +515,16 @@ def line_intersection2D(line1, line2, is_inclusive=True, tol=0.01, angtol=0.001)
         return {'type': 'points'}
     elif mag2 == 0:  #  Other point
         return {'type': 'points'}
-    elif abs(denom) <= tol / mag1 / mag2: # Fairly parallel
+    elif abs(denom) <= tol_length / mag1 / mag2: # Fairly parallel
         # This needs more work to identify collinearity and overlap
         parallel_class = collinearity2D(
                             (p1, v1), (p2, v2), 
                             line_format='pt_vec', 
                             is_inclusive=True, 
-                            tol=tol, angtol=angtol,
-                            check_parallel=False)
+                            tol_length=tol_length, angtol=angtol,
+                            check_parallel=False,
+                            debug=debug,
+                            tag=tag)
         return {'type': parallel_class}
     else:
         t1 = ((p1[1] - p2[1]) * v2[0] - (p1[0] - p2[0]) * v2[1]) / denom        
@@ -528,7 +544,7 @@ def line_intersection2D(line1, line2, is_inclusive=True, tol=0.01, angtol=0.001)
         }
     
 
-def self_intersections(line_list, is_sorted=False, is_inclusive=False, tol = 0.01):
+def self_intersections(line_list, is_sorted=False, is_inclusive=False, tol = 0.01, debug=False, tag=''):
     """Calculates self intersections using a sweep algorithm
     along the x-axis.
     
@@ -548,7 +564,7 @@ def self_intersections(line_list, is_sorted=False, is_inclusive=False, tol = 0.0
         for line2 in line_stack:
             if line2[1][0] >= x:
                 next_stack.append(line2)
-                crossing = line_intersection2D(line, line2, is_inclusive, tol=tol)
+                crossing = line_intersection2D(line, line2, is_inclusive, tol=tol, debug=debug, tag=tag)
                 if crossing['type'] == 'both':
                     cross_list.append(crossing['intersection'])
         line_stack = next_stack.copy()
@@ -833,7 +849,11 @@ def interpolate_force_line(form, x, tol=1E-6):
 
 def interpolate_force_line2(form, x, tol=1E-6):
     """Interpolates a new point in a form polyline
-    Used by the `add_force_line` function"""
+    Used by the `add_force_line` function
+    (I think it is assumed that the )
+    """
+    if len(form) < 1:
+        raise ValueError('interpolate_force_line2 : form must not be an empty list')
     form_out1 = [form[0]]
     form_out2 = []
     for pt1, pt2 in zip(form[:-1], form[1:]):
@@ -846,10 +866,15 @@ def interpolate_force_line2(form, x, tol=1E-6):
             form_out1.append(pt2)
         else:
             form_out2.append(pt2)
+    # problems arise if form_out2 is an empty list
     return form_out1, form_out2
 
 
 def interpolate_force_line3(form, x_list, rescale=True, tol=1E-6):
+    """
+    """
+    if len(form) < 1:
+        raise ValueError('interpolate_force_line3: form must not be an empty list')
     form_list = []
     x_cuts = sorted(set(x_list))
     for x in x_cuts:
@@ -871,7 +896,8 @@ def interpolate_force_line3(form, x_list, rescale=True, tol=1E-6):
 def add_force_line(*forms): # form1, form2
     """
     Input is in the form of a line of coordinates
-    uniformly increasing along the x-axis
+    uniformly increasing along the x-axis.
+    
     """
     x_vals = sorted(set(x for x, _ in sum(forms,[]))) # form1 + form2
     print('x_vals', x_vals)
@@ -920,7 +946,7 @@ def main():
                 line[2]) 
                 for line in lines2Da]
     print('Lines3D:', lines3D)
-    print(self_intersections(lines3D, is_inclusive=True))
+    print(self_intersections(lines3D, is_inclusive=True, debug=False, tag=''))
     print('Lines3Da:', lines3Da)
     #print(self_intersections(lines3Da, is_inclusive=True))
     print('Lines3Db:', lines3Db)
