@@ -25,7 +25,7 @@ Shell_Agg_Props = namedtuple('Shell_Agg_Props', 'material mat_type wt_density th
 Agg_Props = namedtuple('Agg_Props', 'material mat_type wt_density length area volume weight')
 
 
-def rel_story(story_name, Story_List_dict, n_down):
+def rel_story(story_name, Story_List_dict, n_down, tag='', debug=False):
     """Returns the story relative to the story provided
 
     Args:
@@ -38,46 +38,56 @@ def rel_story(story_name, Story_List_dict, n_down):
         n_down (int): the number of stories to descend. It automatically cuts off
             above and below (will not go up above roof or down below base)
     """
-    story_name_split = story_name.split('-')
-    if len(story_name_split) > 1:
-        story_list = Story_List_dict.get(story_name_split[0], [])
-    else:
+    story_name_split = story_name.split('-', 1)
+    # if characters before the hyphen correspond to a "tower" 
+    # this will return a list of storeys
+    story_list = Story_List_dict.get(story_name_split[0], [])
+    
+    if (len(story_name_split) == 0) or len(story_list) == 0:
         story_list = Story_List_dict.get('Default', [])
+    
     story_index = story_list.index(story_name) if story_name in story_list else None
+    
+    if debug and story_index is None:
+        err_tag = f' [{tag}]' if tag else ''
+        print(f'%% Story Lookup Error - going down {n_down} from {story_name}' + err_tag)
+        print()
+    
     return story_list[max(0,min(story_index + n_down, len(story_list) - 1))]
 
 
 def enhance_frame_properties(f_name, f_dict, E2K_dict, 
                         section_def_dict, sec_key_dict, prop_file, 
-                        model_units=Units('N', 'm', 'C')):
+                        model_units=Units('N', 'm', 'C'), debug=False):
     """Add geometric properties to the frame props dictionary.
     
     Identify the type of section information provided 
        (e.g. catalogue, standard section such as Rectangular,
        SD Section, Embedded)
     """
+    MAT_PROP_dict = E2K_dict.get('MATERIAL PROPERTIES',{}).get('MATERIAL',{})
+    # if debug and (not MAT_PROP_dict): print(f'MAT_PROP_dict is missing')
+
     mat = f_dict.get('MATERIAL', None)
     shape = f_dict.get('SHAPE', None)
-    if (mat is None) and (shape.casefold() != 'nonprismatic'):
-        if mat is None:
-            # logging errors
+    m_dict = MAT_PROP_dict.get(mat, MAT_PROP_dict.get(mat.casefold(), {})) if mat is not None else {}
+    
+    if mat is None:
+        # logging errors
+        if (shape.casefold() != 'nonprismatic'):
             print(f'Log: MATERIAL keyword is not present in {f_name} dict: \n\t{f_dict}')
-        MAT_PROP_dict = E2K_dict.get('MATERIAL PROPERTIES',{}).get('MATERIAL',{})
-        m_dict = MAT_PROP_dict.get(mat, {})
-        if not MAT_PROP_dict:
-            # logging errors
-            print(f'Log: MAT_PROP_dict is missing for {f_name}')
-        elif not m_dict:
-            # logging errors
-            print(f'Log: The material for {f_name} ({mat}) is not in MAT_PROP_dict')
-            #raise ValueError('Missing material dictionary data')
-    else:
-        m_dict = {}
+    elif not m_dict:
+        # logging errors
+        print(f'Log: The material for {f_name} ({mat}) is not in MAT_PROP_dict')
+        #raise ValueError('Missing material dictionary data')
     
     temp_f_dict_list = []
     res = None
 
-    if f_dict['SHAPE'] == 'Auto Select Shape':
+    if shape == 'Auto Select Shape':
+        # Pool feature not implemented - therefore select one of the options for this
+        stype = 'ASS'
+        if debug: print(f'++ {f_name}: Mat: {mat}, Shape: {shape}, ShapeType: {stype}')
         as_dict = E2K_dict.get('AUTO SELECT SECTION LISTS',{}).get('AUTOSECTION',{}).get(f_name,{})
         if as_dict:
             f_dict2 = E2K_dict.get('FRAME SECTIONS',{}).get('FRAMESECTION',{}).get(f_name,{}).copy()
@@ -87,25 +97,36 @@ def enhance_frame_properties(f_name, f_dict, E2K_dict,
                 f_dict2['POOL'] = as_dict.get('POOL_ID', 1)
                 f_dict = f_dict2
     
-    if f_dict['SHAPE'] == 'Auto Select List':
+    if shape == 'Auto Select List':
+        stype = 'ASL'
+        if debug: print(f'++ {f_name}: Mat: {mat}, Shape: {shape}, ShapeType: {stype}')
         pass
-    elif f_dict['SHAPE'] == 'Auto Select Shape':
-        pass
-    elif f_dict['SHAPE'] == 'SD Section':
+    elif shape == 'SD Section':
+        stype = 'SDS'
+        if debug: print(f'++ {f_name}: Mat: {mat}, Shape: {shape}, ShapeType: {stype}')
         pass  # this is addressed later
-    elif 'Encasement' in f_dict['SHAPE']:
+    elif 'Encasement' in shape:
+        stype = 'EC'
+        if debug: print(f'++ {f_name}: Mat: {mat}, Shape: {shape}, ShapeType: {stype}')
         enhance_encased_properties(f_dict, E2K_dict)
-    elif f_dict['SHAPE'] == 'Nonprismatic':
+    elif shape == 'Nonprismatic':
+        stype = 'NP'
+        if debug: print(f'++ {f_name}: Mat: {mat}, Shape: {shape}, ShapeType: {stype}')
         temp_f_dict_list.append(f_dict)  # delme after TODO
-    elif (('FILE' in f_dict) or 
-            (len(f_dict) < 4 and f_dict.get('ID')) or
-            (len(f_dict) < 3 and (not f_dict.get('ID')))):   # a catalogue section
+    elif (('FILE' in f_dict.keys()) or  
+            len(set(['ID', 'UNITS'] + list(f_dict.keys()))) < 5):   # a catalogue section
         stype = 'CAT'
-        res = enhance_CAT_properties(f_dict, m_dict,  
+        if debug: print(f'++ {f_name}: Mat: {mat}, Shape: {shape}, ShapeType: {stype}')
+        res = enhance_CAT_properties(f_name, f_dict, m_dict,  
                         section_def_dict, sec_key_dict, prop_file, 
-                        model_units)
+                        model_units, debug=debug)
+    elif shape == 'NA':
+        stype = 'NA'
+        if debug: print(f'++ {f_name}: Mat: {mat}, Shape: {shape}, ShapeType: {stype}')
+        enhance_CALC_properties(f_name, f_dict, m_dict, model_units)
     else:
         stype = 'CALC' # assume it is a standard section
+        if debug: print(f'++ {f_name}: Mat: {mat}, Shape: {shape}, ShapeType: {stype}')
         enhance_CALC_properties(f_name, f_dict, m_dict, model_units)
         
     # returns errors, all changes are made to the dictionary
@@ -139,7 +160,7 @@ def enhance_CALC_properties(f_name, f_dict, m_dict,
         props = CHS_props_func(f_dict)
     elif shape in ('Filled Steel Pipe'): 
         props = CHS_props_func(f_dict)  # TODO temporary
-    elif shape in ('Steel Tube', 'Concrete Tube', 'Tube', 'TUBE'):
+    elif shape in ('Box/Tube','Steel Tube', 'Concrete Tube', 'Tube', 'TUBE'):
         props = RH_props_func(f_dict)
     elif shape in ('Filled Steel Tube'):
         props = RH_props_func(f_dict)  # TODO  temporary
@@ -156,6 +177,8 @@ def enhance_CALC_properties(f_name, f_dict, m_dict,
     elif shape in ('Buckling Restrained Brace'): # BUCKLING RESTRAINED BRACE SECTIONS
         print(f'WARNING - check units of {f_name}: {f_dict}')  # TODO Fix units
         props = R_props_func(f_dict)  # TODO Temporary
+    elif shape in ('NA'):
+        props = {}
     else:
         # logging errors
         print(f'Log: No section ("shape") property enhancement functions found for {f_name}:\n', f_dict)
@@ -194,9 +217,9 @@ def enhance_CALC_properties(f_name, f_dict, m_dict,
         f_dict['Frame_Agg_Props'] = [Frame_Agg_Props(mat, mat_type.casefold(), wt_density, area)]
 
 
-def enhance_CAT_properties(f_dict, m_dict,  
+def enhance_CAT_properties(f_name, f_dict, m_dict,  
                         section_def_dict, sec_key_dict, prop_file, 
-                        model_units=Units('N', 'm', 'C')):
+                        model_units=Units('N', 'm', 'C'), debug=False):
     """"""
     # For catalogue sections, the sections can be looked up.
     # but the units may need to be converted.
@@ -225,6 +248,12 @@ def enhance_CAT_properties(f_dict, m_dict,
         if mat and m_dict:
             wt_density = m_dict.get('W') if m_dict.get('W') else m_dict.get('WEIGHTPERVOLUME')
             mat_type = m_dict.get('DESIGNTYPE') if (m_dict.get('W') and m_dict.get('DESIGNTYPE')) else m_dict.get('TYPE')
+        else:
+            wt_density = None
+            if debug: 
+                print(f'*** {f_name} - Weight density missing')
+                print(f'    f_dict: {f_dict}')
+                print(f'    m_dict: {m_dict}')
         # 5. Place section properties into the dictionary (with units)
         if wt_density and area:
             f_dict['Frame_Agg_Props'] = [Frame_Agg_Props(mat, mat_type.casefold(), wt_density, area)]
@@ -387,6 +416,8 @@ def MAT_PROPERTIES_PP(E2K_dict, debug=False):
     for i, m_dict in enumerate(MAT_PROP_dict.values()):
         if m_dict.get('ID', 0) != 1:  # maintain the 'NONE' as number 1 
             m_dict['ID'] = i + 2  # because GSA does not include number zero
+    
+    if debug: [print(f'** {k}:  {v}') for k, v in MAT_PROP_dict.items()]
 
 
 def FRAME_SECTIONS_PP(E2K_dict, section_def_dict, debug=False):
@@ -425,7 +456,9 @@ def FRAME_SECTIONS_PP(E2K_dict, section_def_dict, debug=False):
     for i, (f_name, f_dict) in enumerate(FRAME_PROP_dict.items()):
         if f_dict.get('ID', 0) != 1:  # maintain the 'NONE' as number 1 
             f_dict['ID'] = i + 2  # because GSA does not include number zero
-        #print('f_dict: ', f_dict)
+        #
+        if debug and i < 3:
+            print(f'{i} | {f_name} :  {f_dict}')
 
         # Add default units for GWA string generation
         # Note that this will be changed later (in enhance_CAT_properties)
@@ -438,10 +471,14 @@ def FRAME_SECTIONS_PP(E2K_dict, section_def_dict, debug=False):
             prop_file = sec_key_dict.get(file_base.casefold(), None)
             f_dict['FILE'] = prop_file
         
+        if debug and i < 3:
+            print(f'{i} | {f_name} :  {f_dict}')
+        
         if f_dict.get('A'):
             res = None  # properties have already been enhanced        
         else:
-            res = enhance_frame_properties(f_name, f_dict, E2K_dict, section_def_dict, sec_key_dict, prop_file, model_units)
+            res = enhance_frame_properties(f_name, f_dict, E2K_dict, 
+            section_def_dict, sec_key_dict, prop_file, model_units, debug=debug)
         
         # update default prop_file (since this becomes the default)
         if f_dict.get('FILE'):
@@ -482,21 +519,28 @@ def ENCASED_SECTIONS_PP(E2K_dict, debug=False):
             if f_dict['SHAPE'].endswith('Rectangle'):
                 encase_props = R_props_func(f_dict)
                 if debug:
-                    print('encase_props (R)', encase_props)
+                    print(f'++ encase_props (R): {f_name} | {encase_props}')
             elif f_dict['SHAPE'].endswith('Circle'):
                 encase_props = C_props_func(f_dict)
                 if debug:
-                    print('encase_props (C)', encase_props)
+                    print(f'++ encase_props (C): {f_name} | {encase_props}')
             else:
                 encase_props = {}
             
             
             agg_props = []
-            embed_area = embed_props.get('A')
             if embed_props.get('UNITS'):
                 model_units = E2K_dict['UNITS']
                 embed_props = convert_prop_units(embed_props, model_units.length)
-                embed_area = embed_props.get('A')
+            
+            embed_area = embed_props.get('A', None)
+
+            if debug:                
+                print(f'++ embed_props: {f_name} | {embed_props}' + ('** No Props! **' if embed_area is None else ''))
+            
+            if embed_area is None:
+                embed_area = 0
+
             agg_props.append(Frame_Agg_Props(embed_mat, embed_mat_type.casefold(), embed_unit_wt, embed_area))
             
             encase_area = encase_props.get('A') - embed_area
@@ -857,6 +901,9 @@ def LINE_ASSIGNS_PP(E2K_dict, debug=False):
     
     # Get reference to sections 
     FRAME_PROP_dict = E2K_dict.get('FRAME SECTIONS', {}).get('FRAMESECTION', {})
+    print('\nFRAME_PROP_dict: ')
+    [print(f'*** {k}: {v}') for k, v in FRAME_PROP_dict.items()]
+    print()
     
     # Check LINES_dict that is to be referenced
     LINES_dict = E2K_dict.get('LINE CONNECTIVITIES', {}).get('LINE', {})
@@ -871,7 +918,9 @@ def LINE_ASSIGNS_PP(E2K_dict, debug=False):
             # If it has, we don't want this messing with the IDs
             if mem_dict.get('ID') is not None:
                 break
-            if i<3 and debug: print(f'i: {i} | key: {key}')
+            if i<3 or isinstance(mem_dict.get('SECTION'), list) and debug: 
+                print(f'i: {i} | key: {key}')
+                print(mem_dict)
             line, story = key  # e.g. (B21, L32)
             
             # reference the Line definition to get generic connectivity
@@ -891,7 +940,7 @@ def LINE_ASSIGNS_PP(E2K_dict, debug=False):
                     story_n = story
                 else:      # one end is on a different story level
                     #story_n = STORY_lookup.get(story_index - drop_n)
-                    story_n = rel_story(story, Story_List_dict, drop_n)
+                    story_n = rel_story(story, Story_List_dict, drop_n, tag=str(key) + f' [{n}]', debug=debug)
                 mem_dict['JT' + n] = (point_n, story_n)
                 
                 ndict = NODES_dict.get((point_n, story_n))
@@ -925,7 +974,10 @@ def LINE_ASSIGNS_PP(E2K_dict, debug=False):
                 mem_dict['L_c'] = clear_length
             
             # add section area (needs access to section definition containing section areas etc
-            f_dict = FRAME_PROP_dict.get(mem_dict.get('SECTION'),{})
+            S_data = mem_dict.get('SECTION')
+            if isinstance(S_data,list): print('S_data:', S_data)
+            f_dict = FRAME_PROP_dict.get(S_data,{})
+            #f_dict = FRAME_PROP_dict.get(mem_dict.get('SECTION'),{})
             agg_props = f_dict.get('Frame_Agg_Props', [])
             agg_props2 = []
             
@@ -1073,7 +1125,7 @@ def AREA_ASSIGNS_PP(E2K_dict, debug=False):
                     story_n = story
                 else:
                     #story_n = STORY_lookup.get(story_index - drop_n)
-                    story_n = rel_story(story, Story_List_dict, drop_n)
+                    story_n = rel_story(story, Story_List_dict, drop_n, tag=str(key) + f' [{n}]', debug=debug)
                 SHELLS_dict[key]['JT' + n] = (point_n, story_n)
                 
                 ndict = NODES_dict.get((point_n, story_n))
@@ -1208,10 +1260,12 @@ def story_geometry(E2K_dict, find_loops = False, debug=False):
         
         # Split lines where they are touched by other lines (T-intersection)
         if debug:
-            print('split',end='|')
+            print('split', end='|')
         
-        tolerance = 0.01 * units_conversion_factor((units.length,'m'))
-        new_line_list, split_beams_dict = split_T(combined_line_list, nc_dict, tol=tolerance, angtol=0.001, debug=debug)
+        length_tolerance = 0.001 * units_conversion_factor(('m', units.length)) # 1.0mm physical tolerance
+        t_tol = 0.001
+
+        new_line_list, split_beams_dict = split_T(combined_line_list, nc_dict, tol=t_tol, len_tol=length_tolerance, ang_tol=0.001, debug=debug)
         
         # update LINE_dict by adding the intersecting nodes
         # this is for use by the GWA_writer
@@ -1230,7 +1284,15 @@ def story_geometry(E2K_dict, find_loops = False, debug=False):
                 # add list of (t-parameter, node_name, node_number to 
                 intermediate_node_list = b_dict.get('INTERMEDIATE_NODES', [])
                 sorted_list = sorted(set(intermediate_node_list + tnn_list), key=lambda x: x[0])                
-                b_dict['INTERMEDIATE_NODES'] = sorted_list
+                
+                # eliminate duplicates - it is assumed that close nodes have alrady been eliminated
+                s_list = sorted_list[:1] + [t2 for t1, t2 in zip(sorted_list[:-1], sorted_list[1:]) if
+                        (
+                            (t1[1:] != t2[1:]) and   # eliminate dupicate nodes
+                            ((t2[0]-t1[0]) > 0.1*t_tol)  # eliminate close nodes
+                        )]
+
+                b_dict['INTERMEDIATE_NODES'] = s_list
                 
 
         # rebuild the connected nodes dictionary to include the intersections
@@ -1327,7 +1389,7 @@ def append_to_dict_set(dict_of_sets, key, item, sort=False):
     dict_of_sets[key] = item_set
 
 
-def split_T(line_ID_list, nc_dict, tol=0.01, angtol =0.001, debug=False):
+def split_T(line_ID_list, nc_dict, tol=0.001, len_tol=0.01, ang_tol =0.001, debug=False):
     """Returns a line_list modified to include new intersections.
     
     Calculates self intersections where one line touches another using a
@@ -1345,6 +1407,9 @@ def split_T(line_ID_list, nc_dict, tol=0.01, angtol =0.001, debug=False):
     Args:
         line_list (list):
         nc_dict (dict):
+        tol (float): tolerance for the t-parameters
+        len_tol (float): tolerance for length
+        ang_tol (float): angular tolerance
     Returns:
         tuple: 
             new_line_ID_list: original line_ID_list with expansion of
@@ -1374,16 +1439,29 @@ def split_T(line_ID_list, nc_dict, tol=0.01, angtol =0.001, debug=False):
     # Identify T-type intersections and generate list of nodes to insert
     # for each beam
     for line1 in sorted_list:
+        #len1 = magNDx(line1, limit=3)
         x = line1[0][0]
+        
+        # line 1 debugging identifier
+        _, _, *tail1, _ = line1
+        tag1 = str(tail1[-1]) if len(tail1) > 0 else ''
+        
         next_stack = []
         for line2 in line_stack:
+            
+            #len2 = magNDx(line2, limit=3)
+            # line 2 debugging identifier
+            _, _, *tail2, _ = line2
+            tag2 = (' | ' + str(tail2[-1])) if len(tail2) > 0 else ''
+        
             if line2[1][0] >= x:
                 next_stack.append(line2)
                 
                 # Test for line intersections (crossings)
                 # Note that intersection parameters (t1 & t2 t-parameters)
                 # relate to the sorted lines
-                crossing = line_intersection2D(line1, line2, True, tol=tol, angtol=angtol)
+
+                crossing = line_intersection2D(line1, line2, True, tol_length=len_tol, angtol=ang_tol, debug=debug, tag=(tag1 + tag2))
                 
                 if crossing['type']  in ('enclosed', 'overlapping',
                     ): # is this the right place to eliminate overlaps?
@@ -1464,7 +1542,7 @@ def split_T(line_ID_list, nc_dict, tol=0.01, angtol =0.001, debug=False):
     return new_line_ID_list, T_sorted_dict
 
 
-def beam_overlap(beam_1, beam_2, t_dict, tol = 0.001):
+def beam_overlap(beam_1, beam_2, t_dict, tol = 0.0001):
     """Returns parametric coefficients for line2 ends relative to line_1
     line_1 & line_2 are tuples of tuples (2D), each with trailing IDs
     for beam and point. 
@@ -1472,6 +1550,9 @@ def beam_overlap(beam_1, beam_2, t_dict, tol = 0.001):
     t_dict must contain entries t21 & t22 which are the parametric
     locations of ends 1 and 2 of beam 2 relative to beam 1. Note that the 
     dictionary can be generated by `eng_utilities.line_overlap`.
+
+    Args:
+        tol (float): a relative tolerance for the parameter t
     """
     (*_, ptID_11), (*_, ptID_12), beamID_1 = beam_1
     (*_, ptID_21), (*_, ptID_22), beamID_2 = beam_2
@@ -1564,7 +1645,7 @@ def quantities_summary(M_dict):
     dlist = []
     [[dlist.append(((k[1], k[0], data.get('MEMTYPE'), 
                      datum.mat_type, datum.material), datum)) 
-      for datum in data.get('Memb_Agg_Props')] 
+      for datum in data.get('Memb_Agg_Props', [])] 
      for k, data in M_dict.items()]
     
     #levels = set([k[0] for k, _ in dlist])
