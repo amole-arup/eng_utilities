@@ -1,4 +1,4 @@
-"""Plotting Utilities
+"""Pandas DataFrame Utilities
 
 These are for providing dataframes for testing.
 
