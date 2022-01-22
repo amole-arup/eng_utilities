@@ -181,6 +181,10 @@ def load_parser(d):
     For loadclass = 'POINTLOAD', 'LINELOAD' or 'AREALOAD'
       LINELOAD  "B2141"  "5F"  TYPE "POINTF"  DIR "GRAV"  LC "LL_0.5"  FVAL 15  RDIST 0.4
       LINELOAD  "B2109"  "6F"  TYPE "UNIFF"  DIR "GRAV"  LC "DL"  FVAL 0.7
+      LINELOAD  "C7"  "GF"  TYPE "TEMP"  LC "THN"  T -10
+      AREALOAD  "A1"  "MEZZ"  TYPE "TEMP"  LC "THP"  T 10'
+      AREALOAD  "F1"  "G/F"  TYPE "UNIFF"  DIR "GRAV"  LC "LL"  FVAL 0.005'
+      AREALOAD  "F34"  "L1"  TYPE "UNIFLOADSET"  "BOH"
     """
     ltype = d.get('TYPE')
     direction = d.get('DIR', None)
@@ -202,6 +206,9 @@ def load_parser(d):
         forces = ('FX', 'FY', 'FZ', 'MX', 'MY', 'MZ')
         load_data = [try_numeric(d.get(item)) for item in forces]
         ldict.update({'DATA': tuple(load_data)})    
+    elif ltype == 'TEMP':  # This is for lines and shells with uniform temperature load
+        temp_data = try_numeric(d.get('T',0))
+        ldict.update({'DATA': temp_data})    
     #return {key:[ldict]}
     return [ldict]
 
