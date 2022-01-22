@@ -1129,7 +1129,15 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
                         #value_2
                         ostr = [str(val) for val in ['LOAD_BEAM_PATCH.2', '', el_ID, lc_ID, f_dir[0], 
                                 'NO', f_dir[1], -1 * pos_1, f_dir[2] * value_1, -1 * pos_2, f_dir[2] * value_2]]
-                        gwa.write('\t'.join(ostr) + '\n') 
+                        gwa.write('\t'.join(ostr) + '\n')
+                    elif load_dict.get('TYPE') == 'TEMP':
+                        # LOAD_1D_THERMAL.2 | name | list | case | type | value
+                        # LOAD_1D_THERMAL.2 | name | item | case | type | pos_1 | value_1 | pos_2 | value_2
+                        ltype = 'CONS'
+                        load_value = load_dict.get('DATA', 0)
+                        ostr = [str(val) for val in ['LOAD_1D_THERMAL', '', el_ID, lc_ID, 
+                                ltype , load_value]]
+                        gwa.write('\t'.join(ostr) + '\n')
             
             # Split loads for split elements
             elif (el_ID is not None) and (len(el_IDs) == (len(int_node_list) + 1) > 1):
@@ -1165,6 +1173,15 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
                                     ostr = [str(val) for val in ['LOAD_BEAM_PATCH.2', '', el, lc_ID, f_dir[0], 
                                             'NO', f_dir[1], -1 * pos_1, f_dir[2] * value_1, -1 * pos_2, f_dir[2] * value_2]]
                                     gwa.write('\t'.join(ostr) + '\n') 
+                    elif load_dict.get('TYPE') == 'TEMP':
+                        # LOAD_1D_THERMAL.2 | name | list | case | type | value
+                        # LOAD_1D_THERMAL.2 | name | item | case | type | pos_1 | value_1 | pos_2 | value_2
+                        for el_ID in el_IDs:
+                            ltype = 'CONS'
+                            load_value = load_dict.get('DATA', 0)
+                            ostr = [str(val) for val in ['LOAD_1D_THERMAL', '', el_ID, lc_ID, 
+                                    ltype , load_value]]
+                            gwa.write('\t'.join(ostr) + '\n')
             else:
                 #print(f'el_ID: {el_ID} - no suitable elements found:')
                 #print(f'   el_IDs: {el_IDs}, int_node_list: {int_node_list}')
@@ -1214,6 +1231,14 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
                         # LOAD_2D_FACE.2 | name | list | case | axis | type | proj | dir | value(n) | r | s
                         ostr = [str(val) for val in ['LOAD_2D_FACE.2', '', bm_max + sh_ID, lc_ID, 
                                 f_dir[0], load_type, 'NO', f_dir[1], f_dir[2] * load_value]]
+                        gwa.write('\t'.join(ostr) + '\n') 
+                    elif load_dict.get('TYPE') == 'TEMP':  # 'POINT' 
+                        load_type = 'CONS' # Constant (uniform) temperature
+                        load_value = load_dict.get('DATA', 0) #
+                        # LOAD_2D_THERMAL.2 | name | list | case | type | values(n)
+                        # LOAD_2D_FACE.2 | name | list | case | axis | type | proj | dir | value(n) | r | s
+                        ostr = [str(val) for val in ['LOAD_2D_THERMAL.2', '', bm_max + sh_ID, lc_ID, 
+                                load_type, load_value]]
                         gwa.write('\t'.join(ostr) + '\n') 
                     #elif f_dir and load_dict.get('TYPE') == 'node_designation_here':  # 'GEN' 
                     #    load_type = 'GEN'
