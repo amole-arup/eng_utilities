@@ -480,7 +480,7 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
         print(f'== {GWApath} ==')    
         print(f'========================================')    
     
-    with open(GWApath, 'w') as gwa:
+    with open(GWApath, 'w', encoding='utf8') as gwa:
         # ** Writing initial lines to GWA **
         # NB "\xb0", "\xb2", "\xb3" are degree sign, squared and cubed symbols
         gwa.write(r'! This file was originally written by a Python script by the E2KtoJSON_code library' + '\n')
@@ -744,11 +744,11 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
 
             # Offsets
             # rigid_zone = bm_dict.get('RIGIDZONE', 0) # not implemented
-            offset_sys = bm_dict.get('OFFSETSYS', None)
+            offset_sys = bm_dict.get('OFFSETSYS', None) # needs to be implemented 'LOCAL'
             
             offsets = [bm_dict.get(offset, 0) for offset in 
-                       ('LENGTHOFFI', 'OFFSETYI', 'OFFSETYI', 
-                        'LENGTHOFFJ', 'OFFSETYJ', 'OFFSETYJ')]
+                       ('LENGTHOFFI', 'OFFSETYI', 'OFFSETZI', 
+                        'LENGTHOFFJ', 'OFFSETYJ', 'OFFSETZJ')]
             
             cardinal_point = bm_dict.get('CARDINALPT', 0)
             if cardinal_point:
