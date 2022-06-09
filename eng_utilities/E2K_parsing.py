@@ -323,7 +323,7 @@ def E2KtoDict(E2K_model_path, debug=False, **kwargs):
     """Parses E2K text files and returns a dictionary.
     
     kwargs can be used to pass information into the function
-    At the moment it is only used for the `debug`flag
+    At the moment it is only used for the `debug` flag
     
     Args:
         E2K_model_path (str): this is a string containing the path
@@ -417,7 +417,9 @@ def E2KtoDict(E2K_model_path, debug=False, **kwargs):
                 if ignore_lines:  # Ignore lines if flag is set to False
                     pass
                 else:            ### This is where all the parsing is done ###
-                    dc = tuple(gather(line_split(line)))
+                    # line_split - breaks lines based on double quotes and spaces
+                    # gather - does a reverse generation of tuples for an E2K line
+                    dc = tuple(gather(line_split(line))) # 
                     the_func(the_dict, dc)  # the active dictionary is modified
     
     if debug:
