@@ -123,29 +123,55 @@ def section_file_parser(root_dir, file_list = [], flatten=False, flat=False):
     return sec_d4
 
 
-def build_section_dict(root_dir=None, flat = False):
-    """"""
-    if not root_dir:
-        root_dir = r'C:\Program Files\Computers and Structures\ETABS 17'
+def build_section_dict(root_dir=None, flat = False, reimport = False):
+    """Generates a section dictionary from the ETABS section database
+    unless a pickled dictionary already exists (can be overriden). 
+
+    The section dictionary created will be stored as a pickle file for future reference
+
+    Args:
+        root_directory: this is the root directory for the ETABS installation. If this 
+            is not specified, then it will look in the standard locations:
+            `C:\Program Files\Computers and Structures\ETABS nn`
+        flat: this will make a flat directory (not fully tested)
+        reimport: this will force the generation of a new dictionary
+            from the ETABS section files, even if a pickle file exists.
+
+    """
+    # This checks for a pickled section file and returns it if available
+    if isfile('section_dict.pkl') and not reimport: # Switch reimport to True to re-import
+        return pickle.load(open('section_dict.pkl', 'rb'))
     
-    # This checks for a pickled section file
-    if isfile('section_dict.pkl') and True: # Switch to False to re-import
-        section_def_dict = pickle.load(open('section_dict.pkl', 'rb'))
+    if root_dir is not None:
+        # if the specified directory does not exist, then set path to `None`
+        if not exists(root_dir):
+            root_dir = None
+    
+    if root_dir is None:
+        # Directory containing section data has not been provided
+        CSi_dir = r'C:\Program Files\Computers and Structures'
+        ETABS_dirs = [folder for folder in listdir(CSi_dir) if folder.startswith('ETABS')]
         
-    else:
-        root_dir = r'C:\Program Files\Computers and Structures\ETABS 17'
-        dir1 = 'Property Libraries Old'
-        dir2 = 'Property Libraries'
-        file_list1 = listdir(join(root_dir, dir1))
-        xml_list1 = [fl for fl in file_list1 if fl.endswith('xml')]
-        file_list2 = listdir(join(root_dir, dir2))
-        xml_list2 = [fl for fl in file_list2 if fl.endswith('xml')]
-        xml_list = [join(dir1, file) for file in xml_list1] + \
-                [join(dir2, file) for file in xml_list2]
-        # Process section data
-        section_def_dict = section_file_parser(root_dir, xml_list, flatten=True, flat=flat)
-        # Do pickle dump for future access
-        pickle.dump(section_def_dict, open('section_dict.pkl', 'wb'))
+        if len(ETABS_dirs) == 0:
+            return {}
+        for ETABS_dir in ETABS_dirs:
+            if exists(join(CSi_dir, ETABS_dirs[-1],'Property Libraries')):
+                root_dir = join(CSi_dir, ETABS_dir)
+        if root_dir is None:
+            return {}
+    
+    dir1 = 'Property Libraries Old'
+    dir2 = 'Property Libraries'
+    file_list1 = listdir(join(root_dir, dir1))
+    xml_list1 = [fl for fl in file_list1 if fl.endswith('xml')]
+    file_list2 = listdir(join(root_dir, dir2))
+    xml_list2 = [fl for fl in file_list2 if fl.endswith('xml')]
+    xml_list = [join(dir1, file) for file in xml_list1] + \
+            [join(dir2, file) for file in xml_list2]
+    # Process section data
+    section_def_dict = section_file_parser(root_dir, xml_list, flatten=True, flat=flat)
+    # Do pickle dump for future access
+    pickle.dump(section_def_dict, open('section_dict.pkl', 'wb'))
         
     return section_def_dict
 
