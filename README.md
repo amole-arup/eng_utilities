@@ -16,33 +16,33 @@ E2K_dict = run_all(E2K_path)
 
 # Export a GWA text file for import into GSA
 GWA_path = r'C:\myfolder\myE2Kfile.GWA'
-write_GSA(E2K_dict, GWA_path)
+write_GWA(E2K_dict, GWA_path)
 ```
 
-The E2K_dict file contains some summaries of quantities in `E2K_dict[MEMBERS SUMMARY]` and `E2K_dict[SHELLS SUMMARY]`
+The E2K_dict file contains some summaries of quantities in `E2K_dict['MEMBERS SUMMARY']` and `E2K_dict['SHELLS SUMMARY']`
 
 ## Notes & Warnings:
 
 ### E2K Parsing
-- this generates a dictionary of dictionaries (of dictionaries) that is largely structured in the same way as the E2K file.
-- most sub-dictionaries are post-processed to provide additional structure (often for simplifying export to other packages)
-- it should be possible to export simply to JSON
+- This generates a dictionary of dictionaries (of dictionaries) that is largely structured in the same way as the E2K file.
+- Most sub-dictionaries are post-processed to provide additional structure (often for simplifying export to other packages)
+- It should be possible to export the python dictionary straight to JSON
 
 
 ### GSA Export
-- currently exports mostly to 'analysis layer' rather than to the 'design layer'
-- intersecting beams are not currently split
-- meshing of large polygonal slabs can be done in the 'design layer'
-- it does not do OFFSETYI etc - it may need a coordinate system to do this...
-- it does axial offsets & cardinal points - but this should be reviewed
-- it does not do rigid offset to make beams more flexible
-- it does most point, beam and area loads, but not diaphragm loads (no wind, seismic)
-- property modifications have not been implemented in GSA
-- it cannot take account of property modifications for individual members (PROPMODS) since GSA does not do this
-- does not address line constraints
-- it does not do piers and spandrels (although that may be possible using GSA Assemblies
+- Exports materials to advanced material properties (but not to code materials)
+- Exports both to 'analysis layer' and to the 'design layer'
+- Intersecting beams are split in the analysis layer
+- Meshing of large polygonal slabs can be done in the 'design layer'
+- It does axial offsets, OFFSETYI etc & cardinal points - but it does not take account of coordinate systems and this should be reviewed
+- It does not do rigid offset to make beams more flexible
+- It does most point, beam and area loads, but not diaphragm loads (no wind, seismic)
+- Property modifications have not been implemented in writing to the GWA file
+- It cannot take account of property modifications for individual members (PROPMODS) since GSA does not do this
+- It does not address line constraints
+- Piers and spandrels are not converted into GSA assemblies
 - Not sure what to do with LINE and AREA which are not beams, columns, braces, floors, panels or ramps
-- handling of asymmetric sections (such as angles / L-sections) has not been rigorously addressed
+- Handling of asymmetric sections (such as angles / L-sections) has not been rigorously addressed
 
 ## TODO: 
     1. Review the aggregation of 2D element areas, volumes and weights   
