@@ -495,6 +495,20 @@ def E2KtoDict_test(text):
 ## ===  Combined E2K Processes  ===
 ## ================================
 
+def key_printout(E2K_dict):
+    for k,v in E2K_dict.items():
+        print(k)
+        if isinstance(v, dict):
+            if len(v) < 6:
+                [print(f'{len(vv):7d}  : {kk}') for kk, vv in v.items()]
+            else:
+                print(f'{len(v):7d}  : {k}')
+        elif isinstance(v, list):
+            print(f'{len(v):7d}  : {k}')
+        else:
+            print(f'{k}  : {v}')
+
+
 def process_E2K_dict(E2K_dict, find_loops=False, debug=False):
     """Carries out all the post-processing of the parsed E2K file
     Most importantly, this adds quantities in a new dictionary"""
@@ -560,17 +574,7 @@ def run_all(E2K_model_path, get_pickle=False, find_loops=False, debug=False, **k
 
     if debug:
         print(f'\n** E2K_dict Final Summary (run_all) ****')
-        for k,v in E2K_dict.items():
-            print(k)
-            if isinstance(v, dict):
-                if len(v) < 6:
-                    [print(f'{len(vv):7d}  : {kk}') for kk, vv in v.items()]
-                else:
-                    print(f'{len(v):7d}  : {k}')
-            elif isinstance(v, list):
-                print(f'{len(v):7d}  : {k}')
-            else:
-                print(f'{k}  : {v}')
+        key_printout(E2K_dict)
 
     return E2K_dict
     
