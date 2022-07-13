@@ -12,7 +12,7 @@ from collections import namedtuple
 from dateutil import parser
 from os.path import exists, isfile, join, basename, splitext
 
-from eng_utilities.general_utilities import try_numeric, unit_validate, Units, units_conversion_factor
+from eng_utilities.general_utilities import try_numeric, unit_validate, Units, units_conversion_factor, rounder
 from eng_utilities.geometry_utilities import *
 from eng_utilities.polyline_utilities import sec_area_3D, perim_area_centroid, line_intersection2D
 from eng_utilities.E2K_section_utilities import *
@@ -1216,6 +1216,8 @@ def LOAD_CASES_PP(E2K_dict, debug=False):
 ## ==================================
 
 def story_geometry(E2K_dict, find_loops = False, debug=False):
+    """identify t-intersections for beams in a horizontal plane and 
+    add intermediate nodes to the beam dictionary E2K_dict['LINE ASSIGNS']['LINEASSIGN']"""
     STORY_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('STORY',{})
     NODE_dict = E2K_dict.get('POINT ASSIGNS', {}).get('POINTASSIGN', {})
     LINE_dict = E2K_dict.get('LINE ASSIGNS', {}).get('LINEASSIGN',{})
@@ -1231,105 +1233,139 @@ def story_geometry(E2K_dict, find_loops = False, debug=False):
     MODEL_SUMMARY_dict = E2K_dict['MODEL SUMMARY']
 
     units = E2K_dict.get('UNITS')    
+    length_tolerance = 0.001 * units_conversion_factor(('m', units.length)) # 1.0mm physical tolerance
+        
 
     storylist = [''] + list(STORY_dict.keys())
     
+    # Cycle through each story in the list of storeys to generate list of lines in the plane
+    # TO DO: consider iterating over LINE_dict entries rather than storeys. 
     for upper_story, lower_story in zip(storylist[:-1], storylist[1:]): # = '5/F'
         if debug:
             print(f'upper storey: {upper_story}, lower storey: {lower_story}', end='|')
-        # Extract joint pairs from beam dictionary
-        line_list = [(k, v['JT1'], v['JT2']) 
-                        for k, v in LINE_dict.items() 
-                        if (k[1] == lower_story and v['MEMTYPE'] in ('BEAM', 'LINE'))]
-        edge_list = [tuple([k] + [v['JT'+str(i+1)] 
-                    for i in range(v.get('NumPts')) 
-                    if v.get('NumPts') and v['JT'+str(i+1)][1] == lower_story]) 
-                        for k, v in AREA_dict.items() 
-                        if (k[1] in (upper_story, lower_story) and v['MEMTYPE'] in ('PANEL', 'AREA'))]
-        
-        combined_line_list = [line for line in (line_list + edge_list) if len(line) == 3]
-
-        # NODE_Connected_Beams_dict = connectivity_dict_builder(combined_line_list, True)
-        
-        # Dictionary for looking up connected nodes for any node 
-        NODE_Connected_Nodes_dict = connectivity_dict_builder(combined_line_list)
-        
-        # Create reduced lookup dictionary for node coordinates
-        nc_dict = {n: NODE_dict.get(n)['COORDS'] for n in NODE_Connected_Nodes_dict}
-        nID_dict = {n: NODE_dict.get(n)['ID']  for n in NODE_Connected_Nodes_dict}
-        
-        # Split lines where they are touched by other lines (T-intersection)
-        if debug:
-            print('split', end='|')
-        
-        length_tolerance = 0.001 * units_conversion_factor(('m', units.length)) # 1.0mm physical tolerance
-        t_tol = 0.001
-
-        new_line_list, split_beams_dict = split_T(combined_line_list, nc_dict, tol=t_tol, len_tol=length_tolerance, ang_tol=0.001, debug=debug)
-        
-        # update LINE_dict by adding the intersecting nodes
-        # this is for use by the GWA_writer
-        # It is assumed that the intermediate nodes were sorted
-        # by t-parameter
-        for beam_ID, n_list in split_beams_dict.items():
-            #beam_ID = (beam_name, lower_story)
-            tnn_list = [(t, nd, nID_dict.get(nd, None)) for t, nd in n_list]
-            b_dict = LINE_dict.get(beam_ID)
-            if b_dict is not None:
-                #intersecting_beam_nodes_set = set([n for _, n in n_list])
-                #beam_node_set = b_dict.get('INTERMEDIATE_NODES', set())
-                #beam_node_set.update(intersecting_beam_nodes_set)
-                #b_dict['INTERMEDIATE_NODES'] = beam_node_set
-                #b_dict['INTERMEDIATE_IDS'] = [nID_dict.get(nd) for nd in beam_node_set if nID_dict.get(nd) is not None]
-                # add list of (t-parameter, node_name, node_number to 
-                intermediate_node_list = b_dict.get('INTERMEDIATE_NODES', [])
-                sorted_list = sorted(set(intermediate_node_list + tnn_list), key=lambda x: x[0])                
-                
-                # eliminate duplicates - it is assumed that close nodes have alrady been eliminated
-                s_list = sorted_list[:1] + [t2 for t1, t2 in zip(sorted_list[:-1], sorted_list[1:]) if
-                        (
-                            (t1[1:] != t2[1:]) and   # eliminate dupicate nodes
-                            ((t2[0]-t1[0]) > 0.1*t_tol)  # eliminate close nodes
-                        )]
-
-                b_dict['INTERMEDIATE_NODES'] = s_list
-                
-
-        # rebuild the connected nodes dictionary to include the intersections
-        if len(split_beams_dict) > 0:
-            NODE_Connected_Nodes_dict = connectivity_dict_builder(new_line_list)
-        
-        # Find duplicate nodes and eliminate them
-        #
-        
-        # Find overlapping beams and break them up and eliminate duplicates
-        #
-        
-        # Find loops in each story
-        if find_loops:
-            if debug:
-                print('loop',end='|')        
-            try:
-                loops_list = all_loops_finder(nc_dict, NODE_Connected_Nodes_dict)
-                polylines = [[nc_dict[node] for node in loop] for loop in loops_list]
             
-                if debug:
-                    print('area',end='|')        
-                area = sum(perim_area_centroid(polyline)[0] for polyline in polylines)
-                if debug:
-                    print('write',end='|')        
-                if MODEL_SUMMARY_dict.get(lower_story) is None:
-                    MODEL_SUMMARY_dict[lower_story] = {}
-                    MODEL_SUMMARY_dict[lower_story]['Loop_Area_m2'] = area * units_conversion_factor((units.length, 'm'))**2
+        # Extract joint pairs for 1D elements (beams, lines) in the lower storey from beam dictionary
+        #   - stored as ELEM, JT1, JT2 - e.g. (('B1566', 'L076'), (3690, 'L076'), (7880, 'L076'))
+        line_z_dict = {}  # organise lines by z-coordinate since a storey may have more than one layer of beams
+        for k, v in LINE_dict.items():
+            if (k[1] == lower_story and 
+                    v['MEMTYPE'] in ('BEAM', 'LINE')):
+                z1 = rounder(NODE_dict.get(v['JT1'])['COORDS'][2], length_tolerance)
+                z2 = rounder(NODE_dict.get(v['JT2'])['COORDS'][2], length_tolerance)
+                if z1 == z2:    # 1D element is horizontal
+                    zd = line_z_dict.get(z1, [])
+                    zd.append((k, v['JT1'], v['JT2']))
+                    line_z_dict[z1] = zd
+
+        # Extract joint lists for 2D elements (walls) in the lower storey from area dictionary
+        #   - stored as ELEM, JT1, JT2, JT3 etc - e.g. (('W724', 'L076'), (7880, 'L076'), (8214, 'L076'), ...)
+        for k, v in AREA_dict.items():
+            if (k[1] in (upper_story, lower_story) and v['MEMTYPE'] in ('PANEL', 'AREA')):
+                joints = [v['JT'+str(i+1)] for i in range(v.get('NumPts'))]
+                z_list = [rounder(NODE_dict.get(jt)['COORDS'][2], length_tolerance) for jt in joints]
+                for zkey in line_z_dict.keys():
+                    h_edge_list = [k] + [jt for jt, z in zip(joints, z_list) if zkey == z]
+                    if len(h_edge_list) == 3:
+                        zd = line_z_dict.get(zkey, [])
+                        zd.append(h_edge_list)
+                        line_z_dict[zkey] = zd
                 
-                if len(sum(loops_list,[])) > 0:
-                    DIAPHRAGM_LOOPS_dict[lower_story] = loops_list.copy()
-            except:
-                if debug:
-                    print('loop_failed',end='|')        
+        for line_list in line_z_dict.values():
+            # NODE_Connected_Beams_dict = connectivity_dict_builder(line_list, True)
             
+            # Dictionary for looking up connected nodes for any node 
+            NODE_Connected_Nodes_dict = connectivity_dict_builder(line_list)
+            
+            # Create reduced lookup dictionary for node coordinates
+            nc_dict = {n: NODE_dict.get(n)['COORDS'] for n in NODE_Connected_Nodes_dict}
+            nID_dict = {n: NODE_dict.get(n)['ID']  for n in NODE_Connected_Nodes_dict}
+            
+            # Split lines where they are touched by other lines (T-intersection)
             if debug:
-                print('end')        
+                print('split', end='|')
+                if lower_story == 'L076':
+                    print(r'******************')
+                    print(line_list)
+                    print()
+            
+            # length_tolerance = 0.001 * units_conversion_factor(('m', units.length)) # 1.0mm physical tolerance
+            t_tol = 0.001
+
+            new_line_list, split_beams_dict = split_T(line_list, nc_dict, t_tol=t_tol, len_tol=length_tolerance, ang_tol=0.001, debug=debug)
+            
+            # update LINE_dict by adding the intersecting nodes
+            # this is for use by the GWA_writer
+            # It is assumed that the intermediate nodes were sorted
+            # by t-parameter
+            for beam_ID, n_list in split_beams_dict.items():
+                #beam_ID = (beam_name, lower_story)
+                tnn_list = [(t, nd, nID_dict.get(nd, None)) for t, nd in n_list]
+                bm_dict = LINE_dict.get(beam_ID)
+                if bm_dict is not None:
+                    #intersecting_beam_nodes_set = set([n for _, n in n_list])
+                    #beam_node_set = b_dict.get('INTERMEDIATE_NODES', set())
+                    #beam_node_set.update(intersecting_beam_nodes_set)
+                    #b_dict['INTERMEDIATE_NODES'] = beam_node_set
+                    #b_dict['INTERMEDIATE_IDS'] = [nID_dict.get(nd) for nd in beam_node_set if nID_dict.get(nd) is not None]
+                    # add list of (t-parameter, node_name, node_number to 
+                    intermediate_node_list = bm_dict.get('INTERMEDIATE_NODES', [])
+                    sorted_list = sorted(set(intermediate_node_list + tnn_list), key=lambda x: x[0])                
+                    
+                    # eliminate duplicates - it is assumed that close nodes have already been eliminated
+                    s_list = sorted_list[:1] + [t2 for t1, t2 in zip(sorted_list[:-1], sorted_list[1:]) if
+                            (
+                                (t1[1:] != t2[1:]) and   # eliminate dupicate nodes
+                                ((t2[0]-t1[0]) > 0.1*t_tol)  # eliminate close nodes
+                            )]
+
+                    bm_dict['INTERMEDIATE_NODES'] = s_list
+                    
+
+            # rebuild the connected nodes dictionary to include the intersections
+            if len(split_beams_dict) > 0:
+                NODE_Connected_Nodes_dict = connectivity_dict_builder(new_line_list)
+            
+            # Find duplicate nodes and eliminate them
+            #
+            
+            # Find overlapping beams and break them up and eliminate duplicates
+            #
+            
+            # Find loops in each story
+            if find_loops:
+                length_factor = units_conversion_factor((units.length, 'm'))
+                if debug:
+                    print('loop', end = ' | ')        
+                try:
+                    loops_list = all_loops_finder(nc_dict, NODE_Connected_Nodes_dict)
+
+                    # Adds loop definitions and areas to dictionary
+                    diaph_loops = DIAPHRAGM_LOOPS_dict.get(lower_story, [])
+                    story_summary_dict = MODEL_SUMMARY_dict.get(lower_story, {})
+                    story_loop_area = story_summary_dict.get('Loop_Area_m2', 0)
+                    new_area = 0
+
+                    for loop in loops_list:
+                        if loop not in diaph_loops:
+                            diaph_loops.append(loop)
+                            polyline = [nc_dict[node] for node in loop]
+                            if debug: print('area', end = ' | ')
+                            new_area += perim_area_centroid(polyline)[0]  * length_factor**2
+                            if debug: print('write', end = ' | ')
+                    
+                    # updates loops to include new ones
+                    DIAPHRAGM_LOOPS_dict[lower_story] = diaph_loops
+                    
+                    # Adds new loop areas to summary (refactored section)
+                    story_summary_dict['Loop_Area_m2'] = story_loop_area + new_area
+                    MODEL_SUMMARY_dict[lower_story] = story_summary_dict
+                
+                except:
+                    if debug:
+                        print('loop_failed', end = ' | ')        
+                
+                if debug:
+                    print('end')        
             
 
 
@@ -1389,7 +1425,7 @@ def append_to_dict_set(dict_of_sets, key, item, sort=False):
     dict_of_sets[key] = item_set
 
 
-def split_T(line_ID_list, nc_dict, tol=0.001, len_tol=0.01, ang_tol =0.001, debug=False):
+def split_T(line_ID_list, nc_dict, t_tol=0.001, len_tol=0.01, ang_tol =0.001, debug=False):
     """Returns a line_list modified to include new intersections.
     
     Calculates self intersections where one line touches another using a
@@ -1406,7 +1442,7 @@ def split_T(line_ID_list, nc_dict, tol=0.001, len_tol=0.01, ang_tol =0.001, debu
 
     Args:
         line_list (list):
-        nc_dict (dict):
+        nc_dict (dict): 
         tol (float): tolerance for the t-parameters
         len_tol (float): tolerance for length
         ang_tol (float): angular tolerance
@@ -1461,15 +1497,15 @@ def split_T(line_ID_list, nc_dict, tol=0.001, len_tol=0.01, ang_tol =0.001, debu
                 # Note that intersection parameters (t1 & t2 t-parameters)
                 # relate to the sorted lines
 
-                crossing = line_intersection2D(line1, line2, True, tol_length=len_tol, angtol=ang_tol, debug=debug, tag=(tag1 + tag2))
+                crossing = line_intersection2D(line1, line2, True, length_tol=len_tol, ang_tol=ang_tol, debug=debug, tag=(tag1 + tag2))
                 
-                if crossing['type']  in ('enclosed', 'overlapping',
+                if crossing['type']  in ('enclosed', 'enclosing', 'overlapping',
                     ): # is this the right place to eliminate overlaps?
                     # === NOT USED ===
                     pass
                     # ================                    
-                if crossing['type'] not in ('parallel', 'anti-parallel', 'separate', 
-                                            'error', 'enclosed', 'overlapping',):
+                if crossing['type'] not in ('parallel', 'anti-parallel', 'separate', 'offset', 'anti-offset', 
+                                            'error', 'other', 'enclosed', 'enclosing', 'overlapping',):
                     
                     # Debugging
                     flag = True if line1[-2] == my_ID or line2[-2] == my_ID else False
@@ -1483,6 +1519,10 @@ def split_T(line_ID_list, nc_dict, tol=0.001, len_tol=0.01, ang_tol =0.001, debu
                     # ==========================================================
                     # extract line parameters for intersection - 
                     # convert the parameters and nodes for the original beam orientation
+                    if debug:
+                        if (crossing.get('t1') is None) or (crossing.get('t2') is None):
+                            print(f'Error in postprocessing \n  line1 = {line1} \n  line2 = {line2} \n {crossing}')
+                    
                     t1 = crossing['t1'] if (line1[-1] == 1) else (1 - crossing['t1'])
                     t2 = crossing['t2'] if (line2[-1] == 1) else (1 - crossing['t2'])
                     
@@ -1506,18 +1546,18 @@ def split_T(line_ID_list, nc_dict, tol=0.001, len_tol=0.01, ang_tol =0.001, debu
                     # ======   Identify which lines touch which   ========
                     # ====== and create lists of new connectivity ========
                     # ====================================================
-                    if (tol < t2 < (1 - tol)):
-                        if (-tol < t1 < tol):
+                    if (t_tol < t2 < (1 - t_tol)):
+                        if (-t_tol < t1 < t_tol):
                             # line1 end1 touches line2
                             append_to_dict_list(T_dict, b2_ID, (t2, b1n1_ID))
-                        elif ((1 - tol) < t1 < (1 + tol)):
+                        elif ((1 - t_tol) < t1 < (1 + t_tol)):
                             # line1 end2 touches line2
                             append_to_dict_list(T_dict, b2_ID, (t2, b1n2_ID))
-                    elif (tol < t1 < (1 - tol)):
-                        if (-tol < t2 < tol):
+                    elif (t_tol < t1 < (1 - t_tol)):
+                        if (-t_tol < t2 < t_tol):
                             # line2 end1 touches line1
                             append_to_dict_list(T_dict, b1_ID, (t1, b2n1_ID))
-                        elif ((1 - tol) < t2 < (1 + tol)):
+                        elif ((1 - t_tol) < t2 < (1 + t_tol)):
                             # line2 end2 touches line1
                             append_to_dict_list(T_dict, b1_ID, (t1, b2n2_ID))
                     # ================================================
