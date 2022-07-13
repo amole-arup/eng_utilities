@@ -27,7 +27,7 @@ except:
     print('eng_utilities not found, trying direct import')
     from geometry_utilities import *
 # from collections import namedtuple, OrderedDict
-from operator import le, lt
+from operator import le, lt, ge, gt
 
 def bounding_box(coords):
     """Runs through a collection of x,y tuple pairs and 
@@ -306,6 +306,119 @@ def loop_finder(pt_dict, connections_dict, start_pt_ID=None, print_points=False)
     return loop_ID_list
 
 
+def offset2D(line_1, line_2, line_format = 'pt_pt', check_parallel = True, ang_tol = 1E-6):
+    """Returns the offset magnitude for two parallel lines defined as pairs of 2D points (pt-pt)
+    or pairs of 2D point and 2D direction vector (pt-vec)
+
+    The function will calculate offsets for the XY plane even if the vectors are 3D or more.
+
+    Args:
+        line_1: first line
+        line_2: second line
+        line_format: 'pt_vec' or 'pt_pt'
+        check_parallel: True or False - if True will raise error if angle between lines exceeds tolerance (ang_tol) 
+        ang_tol: tolerance for lack of parallel
+    
+    >>> line1, line2 = ((0, 0, 0), (3, 4, 0)), ((0, -0.6, 0), (3, 3.4, 0))
+    -0.36
+    """
+    if line_format == 'pt_pt':
+        (pt1, vec1, *_), (pt2, vec2, *_) = [(pt1[:2], sub2D(pt2[:2], pt1[:2])) for pt1, pt2, *_ in (line_1, line_2)]
+    else:
+        (pt1, vec1, *_), (pt2, vec2, *_) = line_1, line_2
+    # vec1 should be the same as vec2
+    if check_parallel:
+        ang2D = acos(cos_sim2D(vec1[:2], vec2[:2]))
+        if ang2D > ang_tol:
+            err_msg = err_msg = f'The angle between line1 and line2 is {ang2D}rad but should be within tolerance ({ang_tol}rad)'
+            raise ValueError(err_msg)
+    return cross2D(vec1[:2], sub2D(pt2[:2], pt1[:2])) / mag2D(vec1[:2])
+
+
+def offset3D(line_1, line_2, line_format = 'pt_pt', check_parallel = True, ang_tol = 1E-6):
+    """Returns the offset magnitude for two parallel lines defined as pairs of 3D points (pt-pt)
+    or pairs of 3D point and 3D direction vector (pt-vec)
+
+    The function will calculate offsets for the XYZ space even if the vectors are longer than 3D.
+
+    Args:
+        line_1: first line
+        line_2: second line
+        line_format: 'pt_vec' or 'pt_pt'
+        check_parallel: True or False - if True will raise error if angle between lines exceeds tolerance (ang_tol) 
+        ang_tol: tolerance for lack of parallel
+    
+    >>> line1, line2 = ((0, 0, 0), (3, 4, 0)), ((0, -0.6, 0), (3, 3.4, 0))
+    0.36
+    """
+    if line_format == 'pt_pt':
+        (pt1, vec1, *_), (pt2, vec2, *_) = [(pt1[:3], sub3D(pt2[:3], pt1[:3])) for pt1, pt2, *_ in (line_1, line_2)]
+    else:
+        (pt1, vec1, *_), (pt2, vec2, *_) = line_1, line_2
+    # vec1 should be the same as vec2
+    if check_parallel:
+        ang3D = acos(cos_sim3D(vec1[:3], vec2[:3])) > ang_tol
+        if ang3D > ang_tol:
+            err_msg = err_msg = f'The angle between line1 and line2 is {ang3D}rad but should be within tolerance ({ang_tol}rad)'
+            raise ValueError(err_msg)
+    return mag3D(cross3D(vec1[:3], sub3D(pt2[:3], pt1[:3]))) / mag3D(vec1[:3])
+
+
+def overlap_test(t1, t2):
+    if (t1 == 0 and t2 == 1) or (t1 == 1 and t2 == 0):
+        state = 'overlying'
+    elif (0 < t1 < 1) and (0 < t2 < 1):
+        state = 'enclosed'
+    elif ((t1 < 0) and (t2 > 1)) or ((t1 > 1) and (t2 < 0)):
+        state = 'enclosing'
+    elif ((t1 < 0) and (0 < t2 < 1)) or \
+        ((t2 < 0) and (0 < t1 < 1)) or \
+            ((t1 > 1) and (0 < t2 < 1)) or \
+                ((t2 > 1) and (0 < t1 < 1)):
+        state = 'overlapping'
+    elif ((t1 < 0) and (t2 < 0)) or ((t1 > 1) and (t2 > 1)):
+        state = 'separate'
+    elif (t1 == 0 and t2 > 0) or (t1 == 1 and t2 < 1) or \
+        (t2 == 0 and t1 > 0) or (t2 == 1 and t1 < 1):
+        state = 'overlapping'
+    elif (t1 == 0 and t2 < 0) or (t1 == 1 and t2 > 1) or \
+        (t2 == 0 and t1 < 0) or (t2 == 1 and t1 > 1):
+        state = 'touching'
+    else:
+        state = 'other' # !!?
+    return state
+
+
+def line_param2D(line, pt):
+    vec = sub2D(line[1], line[0])
+    return dot2D(vec, sub2D(pt, line[0])) / mag2D(vec)**2
+
+
+def line_param3D(line, pt):
+    vec = sub3D(line[1], line[0])
+    return dot3D(vec, sub3D(pt, line[0])) / mag3D(vec)**2
+
+
+def line_paramND(line, pt):
+    vec = subND(line[1], line[0])
+    return dotND(vec, subND(pt, line[0])) / magND(vec)**2
+
+
+def overlap2D(line_1, line_2):
+    t1, t2 = [line_param2D(line_1, pt) for pt in line_2]
+    return overlap_test(t1, t2)
+
+
+def overlap3D(line_1, line_2):
+    t1, t2 = [line_param3D(line_1, pt) for pt in line_2]
+    return overlap_test(t1, t2)
+
+
+def overlapND(line_1, line_2):
+    t1, t2 = [line_paramND(line_1, pt) for pt in line_2]
+    return overlap_test(t1, t2)
+    
+    
 def line_overlap(line_1, line_2, line_format='pt_pt'):
     """Returns parametric coefficients for line2 ends relative to line_1
     line_1 & line_2 are tuples of tuples (2D or 3D)
@@ -355,14 +468,19 @@ def line_overlap(line_1, line_2, line_format='pt_pt'):
     return {'t21': t21, 't22': t22, 'parallel': parallel, 'offset': offset}
 
 
+def are_parallel_lines(line1, line2, angtol, line_format='pt_pt'):
+    pass
+
+
 def collinearity2D(
     line1, line2, 
     line_format='pt_pt',
     is_inclusive=True, 
-    tol_length=0.01, angtol=0.001,
+    length_tol=0.001, ang_tol=0.000001,
     check_parallel=True,
     debug=False,
-    tag = ''):
+    tag = '',
+    as_dict = False):
     """Identifies collinearity and overlap between two lines
     that have already been identified as parallel.
     
@@ -371,12 +489,15 @@ def collinearity2D(
     -  (point2D, vector2D) pairs - line_format = 'pt_vec'
     
     The result is one of the following:
-    - 'parallel'
-    - 'anti-parallel'
+    - 'overlying'
     - 'separate'
     - 'enclosed'
+    - 'enclosing'
     - 'overlapping'
-    - 'error' - the catchall
+    - 'touching'
+    - 'offset'
+    - 'anti-offset'
+    - 'other'
     Note that the two lines should be sorted so that:
     1. they are both oriented in the first quadrant and 
     2. line1 starts at a lower x-coordinate and 
@@ -387,11 +508,13 @@ def collinearity2D(
         line2 (tuple): either pt-pt format or pt-vector format
         line_format (str): either 'pt_pt' or 'pt_vec'
         is_inclusive (bool): if True, then intersections at the ends will be included as intersections
-        tol_length (float): is assumed to be a length tolerance and the default is 0.01 (assumed to be in metres)
+        length_tol (float): is assumed to be a length tolerance and the default is 0.01 (assumed to be in metres)
         check_parallel (bool): carry out checks to see if lines are parallel
         debug (bool): do debug printing
         tag (str): information carried into the function for use in debugging (e.g. beam name)
     """
+    opt = []
+    
     less_than = le if is_inclusive else lt
 
     if line_format == 'pt_pt':
@@ -401,54 +524,85 @@ def collinearity2D(
     
     ((mag1, ang1, *_), (mag2, ang2, *_)) = [cart2cyl(vec) for vec in (vec1, vec2)]
     
+    cos_angle3D = cos_simNDx(vec1, vec2, limit = 3)
+    cos_angle2D = cos_simNDx(vec1, vec2, limit = 2)
+    #angle3D = acos(cos_angle3D)
+    #angle2D = acos(cos_angle2D)
+
     # check that lines really are parallel 
     # (this should be verified by the functions before calling this)
-    if abs(abs(ang1) - abs(ang2)) > (1.0 + 1E-6) * angtol and debug == True:
-        txt = '' if tag == '' else f'[{tag}] ' 
-        err_msg = f'{txt}angles of line1 ({ang1}rad) and line2 ({ang2}rad) should be within tolerance ({angtol}rad) of each other'
-        if check_parallel == True:
-            raise ValueError(err_msg)
-        else:
-            print('Warning: ', err_msg)
-    
+    # abs(abs(ang1) - abs(ang2)) > (1.0 + 1E-6) * angtol
+    rel_ang = angfix(ang1 - ang2)  # angle between -pi and +pi
+
     # check if parallel or anti-parallel
-    if (abs(ang1 + ang2) < (1.0 + 1E-6) * angtol):
+    if abs(rel_ang) < ang_tol:
+        # parallel
+        opt.append(r'parallel')
+        p_fac = 1
+    elif abs(angfix(ang1 - ang2 - pi)) < ang_tol:
         # anti-parallel
-        pt2, vec2 = addNDx(pt2,vec2), negNDx(vec2)
-        (mag2, ang2, *_) = cart2cyl(vec2)
+        opt.append(r'anti-parallel')
         p_fac = -1
     else:
-        p_fac = 1
+        opt.append(r'not parallel')
+        p_fac = 0
+        if check_parallel == True:
+            txt = '' if tag == '' else f'[{tag}]: '
+            err_msg = f'{txt}angle between line1 ({ang1}rad) and line2 ({ang2}rad) is {abs(angfix(ang1 - ang2))}rad and should be within tolerance ({ang_tol}rad)'
+            raise ValueError(err_msg)
     
-    # check whether offset (parallel but not collinear)
-    mag21, ang21, *_ = cart2cyl(subNDx(pt2, pt1, limit=3))
-    if abs(mag21 * (ang21 - ang1)) > tol_length:
-        # lines are offset
-        return 'anti-parallel' if p_fac == -1 else 'parallel'
-    
-    # check overlap
+    # check overlap =====================
+    # Calculation of length parameter t relative to end 1 of line 1 for:
+    # - end 2 of line 1 - t1_end2
+    # - end 1 of line 2 - t2_end1
+    # - end 2 of line 2 - t2_end2
     t1_end2, t2_end1, t2_end2 = [magNDx(subNDx(pt, pt1), limit=2) for pt in (vec1, pt2, addNDx(pt2, vec2))]
+    olap = f't1_end2 = {t1_end2}; t2_end1 = {t2_end1}; t2_end2 = {t2_end2}'
 
+    overlap = t1_end2 - t2_end1
     if less_than(t1_end2, t2_end1): 
-        # no overlap
-        'separate'
+        # no overlap        
+        opt.append(r'separate')
+        state = 'separate'
     elif t1_end2 == 0: 
         # strictly speaking these are special cases
         # especially since line2 could be longer than
         # line1 if they have not been sorted for longest first 
-        return 'overlapping'        
+        opt.append(r'overlapping')
+        state = 'overlapping'        
     else:
         if less_than(t2_end2, t1_end2):  # the end of line2 is within line1
-            return 'enclosed'
+            opt.append(r'enclosed')
+            state = 'enclosed'
         else:    # the end of line2 is outside line1 - overlap
-            return 'overlapping'
-    
-    if debug:
-        print(f'** error in collinearity2D, \nline1: {line1}, \nline2: {line2}, \ntype: {line_format}')
-    return 'error'
+            opt.append(r'overlapping')
+            state = 'overlapping'
+
+    # check whether offset ==================
+    # (parallel but not collinear)
+    mag21, ang21, *_ = cart2cyl(subNDx(pt2, pt1, limit=3))
+    offset = abs(mag21 * (ang21 - ang1))
+    if offset > length_tol:
+        # lines are offset
+        opt.append(r'// offset {offset:.4g}')
+        state = 'anti-offset' if p_fac == -1 else 'offset'
+
+    # debug =======================================
+    if False:
+        txt = '' if tag == '' else f'[{tag}]: '
+        print(f'## collinearity2D ({", ".join(opt)}): \n{olap} \nline1 = {line1} \nline2 = {line2} ' + \
+        f'\npt1 = {pt1}; vec1 = {vec1} \npt2 = {pt2}; vec2 = {vec2}' + \
+        f'\nmag1 = {mag1:.4f}; ang1 = {ang1:.4f} \nmag2 = {mag2:.4f}; ang2 = {ang2:.4f} \nmag21 = {mag21:.4f}; ang21 = {ang21:.4f}' + \
+        f'\nline_type = "{line_format}" \ncollinearity2D(line1, line2, line_type, debug=True)')
+        verb = 'is' if abs(p_fac) == 1 else 'should be'
+        err_msg = '' if abs(p_fac) == 1 else '**Error** '
+        msg = f'{err_msg}{txt}angle between line1 ({ang1}rad) and line2 ({ang2}rad) is {abs(angfix(ang1-ang2))}rad and {verb} within tolerance ({ang_tol}rad)'
+        print(msg)
+        
+    return {'state': state, 'cos_angle2D': cos_angle2D, 'cos_angle3D': cos_angle3D, 'offset': offset, 'overlap': overlap} if as_dict else state 
 
 
-def line_intersection2D(line1, line2, is_inclusive=True, tol_length=0.01, angtol=0.001, debug=False, tag=''):
+def line_intersection2D(line1, line2, is_inclusive=True, length_tol=0.01, ang_tol=0.001, debug=False, tag=''):
     """Returns a dictionary of any intersection when 
     provided with two lines (each defined as a pair of tuples).
     
@@ -469,7 +623,8 @@ def line_intersection2D(line1, line2, is_inclusive=True, tol_length=0.01, angtol
         'separate' : collinear, but not overlapping
         'enclosed' : collinear, line2 is inside line1
         'overlapping' : collinear, line2 overlaps line1
-        'error'    :  the catchall (something went wrong)
+        'offset'   : lines are parallel, but offset
+        'anti-offset'  : lines are anti-parallel, but offset
 
     Intersections are defined in the XY plane. Other coordinates
     will be carried over, but ignored. If the is_inclusive option
@@ -487,7 +642,8 @@ def line_intersection2D(line1, line2, is_inclusive=True, tol_length=0.01, angtol
     Args:
         line1 (list):
         line2 (list):
-        is_inclusive (bool): whether Note that this does not affect
+        is_inclusive (bool): whether touching is included in the definition of intersection
+            Note that this does not affect
             the `touching` checks which are assumed to be inclusive
         tol_length (float): Tolerance for (default is 0.01, assuming units of metres)
         angtol (float): Angular tolerance for parallel check (default 0.001)
@@ -500,44 +656,51 @@ def line_intersection2D(line1, line2, is_inclusive=True, tol_length=0.01, angtol
             't2' - parametric location of intersection in line1
     """
     less_than = le if is_inclusive else lt
+    more_than = ge if is_inclusive else gt
 
     p1, v1 = line1[0], subNDx(line1[1], line1[0])
     p2, v2 = line2[0], subNDx(line2[1], line2[0])
     mag1, mag2 = [magNDx(v) for v in (v1, v2)] # lengths
     maxmag = max(mag1, mag2)
     
-    # NB cross product is v1[0]*v2[1] - v1[1]*v2[0]
+    # NB cross product is v1[0] * v2[1] - v1[1] * v2[0]
     denom = v1[0] * v2[1] - v1[1] * v2[0]
     
     if (mag1 == 0) and (mag2 == 0):  #  Two points
         return {'type': 'points'}
-    elif mag1 == 0:  #  One point
+    elif mag1 == 0 or mag2 == 0:  #  One point and a line
         return {'type': 'points'}
-    elif mag2 == 0:  #  Other point
-        return {'type': 'points'}
-    elif abs(denom) <= tol_length / mag1 / mag2: # Fairly parallel
+    elif abs(denom) <= length_tol / mag1 / mag2: # Very parallel
         # This needs more work to identify collinearity and overlap
         parallel_class = collinearity2D(
                             (p1, v1), (p2, v2), 
                             line_format='pt_vec', 
                             is_inclusive=True, 
-                            tol_length=tol_length, angtol=angtol,
+                            length_tol=length_tol, 
+                            ang_tol=ang_tol,
                             check_parallel=False,
                             debug=debug,
-                            tag=tag)
-        return {'type': parallel_class}
-    else:
-        t1 = ((p1[1] - p2[1]) * v2[0] - (p1[0] - p2[0]) * v2[1]) / denom        
+                            tag=tag,
+                            as_dict = False)
+        #  Return description for parallel lines
+        return {'type': parallel_class}   
+
+    else:      #  calculation of intersection in XY plane
+        t1 = ((p1[1] - p2[1]) * v2[0] - (p1[0] - p2[0]) * v2[1]) / denom
         t2 = ((p1[1] - p2[1]) * v1[0] - (p1[0] - p2[0]) * v1[1]) / denom
         
+        # Identify whether the intersection is actually one beam touching another or 
+        # whether it is is a crossing
+        t_tol = 0 # 
         crossing_type = None
-        if less_than(0, t1) and less_than(t1, 1):
-            crossing_type = 'line1'
-        if less_than(0, t2) and less_than(t2, 1):
-            crossing_type = 'both' if crossing_type else 'line2'
+        if less_than(0 - t_tol, t1) and less_than(t1, 1 + t_tol):
+            crossing_type = 'line1'  # line2 touches or crosses line1
+        if less_than(0 - t_tol, t2) and less_than(t2, 1 + t_tol):
+            crossing_type = 'both' if crossing_type else 'line2'  # line1 touches line2
         if crossing_type is None:
             crossing_type = 'neither'
         
+        #  Return description for crossing lines
         return {'type': crossing_type, 
         'intersection': addND(p1, scaleND(v1, t1)), 
         't1': t1, 't2': t2, 
@@ -564,7 +727,7 @@ def self_intersections(line_list, is_sorted=False, is_inclusive=False, tol = 0.0
         for line2 in line_stack:
             if line2[1][0] >= x:
                 next_stack.append(line2)
-                crossing = line_intersection2D(line, line2, is_inclusive, tol=tol, debug=debug, tag=tag)
+                crossing = line_intersection2D(line, line2, is_inclusive, tol_length=tol, debug=debug, tag=tag)
                 if crossing['type'] == 'both':
                     cross_list.append(crossing['intersection'])
         line_stack = next_stack.copy()
