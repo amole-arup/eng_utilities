@@ -286,6 +286,12 @@ def cos_sim3D(v1, v2, default=None):
         return dot3D(v1, v2) / mag3D(v1) / mag3D(v2)
 
 
+def dir_cos3D(v, default=None):
+    """returns direction cosines for the vector v
+    """
+    return tuple([cos_sim3D(v, base, default=default) for base in ((1,0,0), (0,1,0), (0,0,1))])
+
+
 def dev3D(v1,v2, default=None):
     """Provides the perpendicular distance (deviation) of the end of line v1 from line v2"""
     v1mag = mag3D(v1, 0)
@@ -555,6 +561,24 @@ def dotND(v1, v2):
     return sum(vv1 * vv2 for vv1, vv2 in zip(v1, v2))
 
 
+def dotNDx(v1, v2, limit=0):
+    """Returns dot product of two nD vectors, 
+    ignoring items if one or more are not numeric, with 
+    an option to limit length of tuples to a certain 
+    length defined by the `limit` argument
+    (same as itemwise multiplication followed by summation).
+    Note that this does not catch cases 
+    where an element of the divisor is zero."""
+    if limit > 0:
+        return sum(vv1 * vv2 for i, (vv1, vv2) in enumerate(zip(v1, v2))
+        if (isinstance(vv1, (int, float)) 
+            and isinstance(vv2, (int, float))
+            and i < limit))
+    else:
+        return sum(vv1 * vv2 for vv1, vv2 in zip(v1, v2)
+        if (isinstance(vv1, (int, float)) and isinstance(vv2, (int, float))))
+
+
 def distND(pt1, pt2):
     """Returns distance between two nD points (as two n-tuples)"""
     return (sum((vv2 - vv1)**2.0 for vv1, vv2 in zip(pt1, pt2)))**0.5
@@ -597,7 +621,8 @@ def scaleNDx(v, s, limit=0):
 
 def cos_simND(v1, v2, default=None):
     """returns the cosine of the angle between two vectors (v1, v2) based on the dot product
-    v1 . v2 = |v1|  |v2| cos (<v1,v2>)"""
+    v1 . v2 = |v1|  |v2| cos (<v1,v2>), with the option of a default
+    value in the case of a zero-magnitude input"""
     m1, m2 = magND(v1), magND(v2)
     if m1 * m2 == 0.0 :
         if default is None:
@@ -606,6 +631,22 @@ def cos_simND(v1, v2, default=None):
             return default
     else:
         return dotND(v1, v2) / m1 / m2
+
+
+def cos_simNDx(v1, v2, limit=0, default=None):
+    """returns the cosine of the angle between two vectors (v1, v2) based on the dot product
+    v1 . v2 = |v1|  |v2| cos (<v1,v2>),
+    ignoring items if they are not numeric, and also with
+    an option to limit length of tuples to a certain 
+    length defined by the `limit` argument."""
+    m1, m2 = magNDx(v1, limit=limit), magNDx(v2, limit=limit)
+    if m1 * m2 == 0.0 :
+        if default is None:
+            raise ValueError('Both vectors should have non-zero magnitude')
+        else:
+            return default
+    else:
+        return dotNDx(v1, v2, limit=limit) / m1 / m2
 
 
 
