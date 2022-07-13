@@ -14,7 +14,6 @@ from eng_utilities.E2K_parsing import run_all
 from eng_utilities.GWA_utilities import write_GWA
 
 dir_path = r'.\samples'
-dir_path = r'C:\Users\andrew.mole\Downloads\s3-et'
 
 directory_listing = listdir(dir_path)
 # join(f'..\samples', fl)
