@@ -1,6 +1,7 @@
 """"""
 
 from collections import namedtuple
+from math import log10, ceil, floor
 
 
 def is_numeric(numstring):
@@ -87,6 +88,10 @@ units_conv_base_dict = {
     ('lbf', 'GN'): 4.4482216e-09, ('lbf', 'MN'): 4.4482216e-06, ('lbf', 'kN'): 4.4482216e-03, ('lbf', 'N'): 4.4482216, 
     ('kip', 'MN'): 0.0044482216, ('kip', 'kN'): 4.4482216, ('kip', 'N'): 4448.2216, 
     ('kipf', 'MN'): 0.0044482216, ('kipf', 'kN'): 4.4482216, ('kipf', 'N'): 4448.2216, 
+    ('lb', 'mt'): 0.45359237e-06, ('lb', 't'): 0.45359237e-03, ('lb', 'kg'): 0.45359237, 
+    ('lbm', 'mt'): 0.45359237e-06, ('lbm', 't'): 0.45359237e-03, ('lbm', 'kg'): 0.45359237, 
+    ('kip', 'mt'): 0.00045359237, ('kip', 't'): 0.45359237, ('kip', 'kg'): 453.59237, 
+    ('kipm', 'mt'): 0.00045359237, ('kipm', 't'): 0.45359237, ('kipm', 'kg'): 453.59237, 
     ('kg', 'mt'): 1e-06, ('kg', 't'): 0.001, ('t', 'mt'): 0.001, ('mt', 'mt'): 1.0,  
 }
 
@@ -143,3 +148,9 @@ def ci_lookup(the_key, the_dict, default=None):
         return the_dict.get(key_dict[the_key.casefold()])
     else:
         return default
+
+
+def rounder(n, e):
+    """returns a number `n` rounded to match the magnitude of `e`"""
+    return round(n, -int(floor(log10(e))))
+
