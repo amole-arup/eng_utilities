@@ -344,6 +344,7 @@ def E2KtoDict(E2K_model_path, debug=False, **kwargs):
     # the_dict = E2K_dict
 
     ignore_lines = False
+    # , encoding='utf8'
     with open(E2K_model_path, 'r') as E2K_file:
         for line in E2K_file:
             if line.startswith(r'$ File'):
@@ -519,7 +520,7 @@ def process_E2K_dict(E2K_dict, find_loops=False, debug=False):
     CONTROLS_PP(E2K_dict, debug=debug)
     STORIES_PP(E2K_dict, debug=debug)
     MAT_PROPERTIES_PP(E2K_dict, debug=debug)
-    section_def_dict = build_section_dict()
+    section_def_dict = build_section_dict(debug=debug)
     FRAME_SECTIONS_PP(E2K_dict, section_def_dict, debug=debug)
     ENCASED_SECTIONS_PP(E2K_dict, debug=debug)
     SD_SECTIONS_PP(E2K_dict, debug=debug)
@@ -541,40 +542,53 @@ def process_E2K_dict(E2K_dict, find_loops=False, debug=False):
         print('"story_geometry" failed')"""
     # LOADS   # TODO
     # GROUPS  # TODO
-    if debug: print('===== Post-processing finished ==========')
+    if debug: print('\n===== Post-processing finished ==========\n')
     
 
-def run_all(E2K_model_path, get_pickle=False, find_loops=False, debug=False, **kwargs):
+def run_all(E2K_model_path, get_pickle=False, save_pickle=True, find_loops=False, debug=False, **kwargs):
     """Runs all functions for parsing and post-processing an ETABS text file
     It returns a dictionary that is in the format of the text file.
     Since processing can be time-consuming, it pickles the output 
     and will preferentially unpickle if 'get_pickle' is True"""
     debug = kwargs.get('Debug', False) or debug
     
-    pickle_path = splitext(E2K_model_path)[0] + '.pkl'
-    pickle_path_2 = splitext(E2K_model_path)[0] + '_2.pkl'
     
+    pickle_path = splitext(E2K_model_path)[0] + '.pkl'
     if exists(pickle_path) and get_pickle == True:
         if debug:
             print('** Extracting E2K_dict from pickle file ***')
         E2K_dict = pickle.load(open(pickle_path, 'rb'))
     else:
-        if debug:
-            print('** Parsing E2K file... ***')
+        if debug: print('** Parsing E2K file... ***')
         E2K_dict = E2KtoDict(E2K_model_path, debug=debug, **kwargs)
-        pickle.dump(E2K_dict, open(pickle_path, 'wb'))
+        if save_pickle:
+            if debug: print('\n** Pickling E2K_dict **')
+            pickle.dump(E2K_dict, open(pickle_path, 'wb'))
+            if debug: print('-- First pickle file ' + ('exists\n' if exists(pickle_path) else 'does NOT exist\n'))
+
     
-    if debug: print(f'run_all passing to process_E2K_dict, debug = {debug}')
+    if debug: print(f'** `run_all` transitioning to `process_E2K_dict`, debug = {debug}')
     process_E2K_dict(E2K_dict, find_loops=find_loops, debug=debug)
     
-    try:
+    if save_pickle:
+        pickle_path_2 = splitext(E2K_model_path)[0] + '_2.pkl'
+
+        if debug: print(f'\nE2K_dict is a {type(E2K_dict)}')
+        if debug: key_printout(E2K_dict)
         pickle.dump(E2K_dict, open(pickle_path_2, 'wb'))
-    except:
-        print('second pickle dump failed')
+        print('second pickle dump succeeded')
+        
+        """try:
+            pickle.dump(E2K_dict, open(pickle_path_2, 'wb'))
+            print('\n** Second pickle dump succeeded')
+        except:
+            print('\n** Second pickle dump failed')"""
+    
+    print('-- Second pickle file ' + ('exists\n' if exists(pickle_path_2) else 'does NOT exist\n'))
 
     if debug:
         print(f'\n** E2K_dict Final Summary (run_all) ****')
-        key_printout(E2K_dict)
+        # key_printout(E2K_dict)
 
     return E2K_dict
     
