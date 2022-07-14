@@ -44,7 +44,7 @@ def rel_story(story_name, Story_List_dict, n_down, tag='', debug=False):
     story_list = Story_List_dict.get(story_name_split[0], [])
     
     if (len(story_name_split) == 0) or len(story_list) == 0:
-        story_list = Story_List_dict.get('Default', [])
+        story_list = list(Story_List_dict.get('Default', []))
     
     story_index = story_list.index(story_name) if story_name in story_list else None
     
