@@ -364,15 +364,22 @@ def int_node_filter(int_node_list, tol=1E-4):
                         )]
 
 
-def GWA_mat_string(name, mat_dict, num, grav=1):
+def GWA_mat_string(name, mat_dict, num, grav=1, debug=False):
     """Generates GWA text string for steel and concrete materials
 
     mat_type - STEEL, CONCRETE
     
     """
-    # grav = 1  # need to program this
-    rho = mat_dict.get('W', 0) / grav
-    mat_type = mat_dict.get('DESIGNTYPE', 'GENERIC')
+    if mat_dict.get('W') is not None:
+        mat_type = mat_dict.get('DESIGNTYPE', 'Unknown')
+        wt_density = mat_dict.get('W', 0)
+    else:
+        mat_type = mat_dict.get('TYPE', 'Unknown')
+        wt_density = mat_dict.get('WEIGHTPERVOLUME', 0)
+    
+    if debug: print(f'-- GWA_mat_string function called for {name} (type = {mat_type}):')
+    
+    rho = wt_density / grav
     cost = mat_dict.get('PRICE', 0)
     alpha = mat_dict.get('A', 0)
     E_des = mat_dict.get('E', 0)
@@ -387,9 +394,7 @@ def GWA_mat_string(name, mat_dict, num, grav=1):
     mat_def = 'MAT_ELAS_ISO'
     Mat_Anal = ['MAT_ANAL.1', mat_type, '', mat_def, 6, E_anl, nu, rho, alpha, G, damp, 0, 0]
 
-
-
-    if mat_type == "STEEL": # Steel
+    if mat_type.casefold() == 'steel': # Steel
         fy = mat_dict.get('FY', 0)
         fu = mat_dict.get('FU', 0)
         e_y = fy / E_anl
@@ -407,11 +412,17 @@ def GWA_mat_string(name, mat_dict, num, grav=1):
         
         # Final composition of data
         Mat_Steel = ['MAT_STEEL.3', num] + Mat + [fy, fu, eps_p, Eh]
+
+        if debug:
+            if min(len(Mat),len(Mat_Anal), len(Mat_Steel)) > 2:
+                print(f'--- Steel Design material Generated - {name} (type = {mat_type}, density = {rho:.4g})')
+            else:
+                print(f'--- Steel Design material NOT Generated - {name} (type = {mat_type}, density = {rho:.4g})')
         
         # Return a tab-separated string
         return '\t'.join([str(a) for a in Mat_Steel])
 
-    elif mat_type == "CONCRETE":  # Concrete
+    elif mat_type.casefold().startswith('conc'):  # Concrete
         # 'FY', 'FC', 'FYS'
         fcu = mat_dict.get('FC', 0)
         fy = mat_dict.get('FY', 0) # not used here
@@ -443,6 +454,12 @@ def GWA_mat_string(name, mat_dict, num, grav=1):
 
         # Final composition of data
         Mat_Conc = ['MAT_CONCRETE.17', num] + Mat + Conc_strength_props + Conc_strain_props + Conc_other_props
+
+        if debug:
+            if min(len(Mat),len(Mat_Anal), len(Mat_Conc)) > 2:
+                print(f'--- Concrete Design material Generated - {name} (type = {mat_type}, density = {rho:.4g})')
+            else:
+                print(f'--- Concrete Design material NOT Generated - {name} (type = {mat_type}, density = {rho:.4g})')
 
         # Return a tab-separated string
         return '\t'.join([str(a) for a in Mat_Conc])
@@ -619,10 +636,10 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
             m_ID = m_dict.get('ID', '')
             E_val = m_dict.get('E', 0)
             nu = m_dict.get('U', 0)
-            rho_w = m_dict.get('W', 0) if m_dict.get('W') else m_dict.get('WEIGHTPERVOLUME', 0)
+            rho_w = m_dict.get('W', 0) if m_dict.get('W') is not None else m_dict.get('WEIGHTPERVOLUME', 0)
             rho_m = rho_w / grav
             alpha = m_dict.get('A', 0)
-            mat_type = m_dict.get('TYPE')
+            mat_type = m_dict.get('DESIGNTYPE') if m_dict.get('W') is not None else m_dict.get('TYPE', 0)
             ostr = [str(val) for val in ['MAT_ANAL', m_ID, 'MAT_ELAS_ISO', m_name, 
                     'NO_RGB', '6', E_val, nu, rho_m, alpha]]
             #gwa.write('PROP_SEC.2\t{:d}\t{:s}\t\t{:s}\t{:s}\n'.format(fp, name, '', desc))
@@ -634,14 +651,18 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
         conc_ID = 0
 
         for name, mat_dict in MAT_PROPS_dict.items():
-            mat_type = mat_dict.get('DESIGNTYPE', '')
-            print(name, mat_type)
+            if mat_dict.get('W') is not None:
+                mat_type = mat_dict.get('DESIGNTYPE', '')
+            else:
+                mat_type = mat_dict.get('TYPE', '')
+
+            if debug: print(f'Material = {name}; Material_Type = {mat_type}')
             if mat_type.casefold().startswith('conc'):
                 conc_ID += 1
-                GWA_mat_string_list.append(GWA_mat_string(name, mat_dict, num=conc_ID, grav=grav))
+                GWA_mat_string_list.append(GWA_mat_string(name, mat_dict, num=conc_ID, grav=grav, debug=debug))
             elif mat_type.casefold() == 'steel':    
                 steel_ID += 1
-                GWA_mat_string_list.append(GWA_mat_string(name, mat_dict, num=steel_ID, grav=grav))
+                GWA_mat_string_list.append(GWA_mat_string(name, mat_dict, num=steel_ID, grav=grav, debug=debug))
             
         # write to file
         for GWA_line in GWA_mat_string_list:
@@ -925,7 +946,7 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
             # TODO: identify and eliminate the generation of extra nodes
             gwa.write('\t'.join(ostr5 + [rel_txt]) + '\n') # + ostr6 + [offsets_txt]) + '\n')
 
-        if debug: print('     Max beam ID is:', bm_max)
+        if debug: print(f'     Max beam ID is: {bm_max}')
         
         
         # ========================
@@ -1001,7 +1022,7 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
             sh_max = bm_max + sh_ID
         
         memb_max = sh_max
-        if debug: print('     Max shell_ID is:', sh_max)
+        if debug: print(f'     Max shell_ID is: {sh_max}')
         
         
         # =======================
@@ -1205,7 +1226,7 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
 
 
         LC_ID_lookup_dict = {v['ID']: k for k, v in LOADCASE_dict.items()}
-        if False:
+        if debug:
             print(LC_ID_lookup_dict)
             print(LOADCASE_dict)
 
@@ -1423,7 +1444,7 @@ def write_GWA_model(
                     'ID': i+1, 
                     'N1': NODE_dict.get(n1,{}).get('ID',1), 
                     'N2': NODE_dict.get(n2,{}).get('ID',1)}
-                print(LINE_dict[id])
+                if debug: print(LINE_dict[id])
 
     with open(GWApath, 'w') as gwa:
         # ** Writing initial lines to GWA **
