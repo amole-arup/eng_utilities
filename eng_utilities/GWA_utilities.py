@@ -1,6 +1,10 @@
 """Utilities for generating GWA text files from the processed
 dictionary generated from ETABS text files (E2K, $ET)
 
+Notes:
+1. Shell property modification factors are different in GSA
+2. 
+
 TODO:
 * Add assemblies for spandrels and piers
 """
@@ -257,6 +261,7 @@ def set_releases(rel, n=1):
 
 def set_offsets(offsets, offset_sys = None, cy = 0, cz = 0):
     """Takes 6 offset values from ETABS and converts into GSA standard
+    Note that the effect of the CARDINALPT is included as cy, cz
     
     ('LENGTHOFFI', 'OFFSETYI', 'OFFSETZI', 
         'LENGTHOFFJ', 'OFFSETYJ', 'OFFSETZJ')
@@ -630,6 +635,16 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
         # ** Creating Materials Database and writing analysis materials to GWA ** 
         if debug: print(f'\n===== Writing {len(MAT_PROPS_dict)} Mat Properties to GWA =====')    
         # if ETABS_dict.get('MatProps'):
+        
+        ETABS2GWA_mat_type_dict = {
+            'Steel': 'STEEL', 'steel': 'STEEL', 'STEEL': 'STEEL',
+            'Coldformed': 'STEEL', 'coldformed': 'STEEL', 'COLDFORMED': 'STEEL',
+            'Rebar': 'REBAR', 'rebar': 'REBAR', 'REBAR': 'REBAR',
+            'Tendon': 'REBAR', 'tendon': 'REBAR', 'TENDON': 'REBAR',
+            'Concrete': 'CONCRETE', 'concrete': 'CONCRETE', 'CONCRETE': 'CONCRETE', 
+            'Aluminum': 'ALUMINIUM', 'aluminum': 'ALUMINIUM', 'ALUMINUM': 'ALUMINIUM', 
+            }
+        
         # MAT_STEEL.3 | num | <mat> | fy | fu | eps_p | Eh
         # MAT_ANAL | num | MAT_ELAS_ISO | name | colour | 6 | E | nu | rho | alpha | G | damp |
         for m_name, m_dict in MAT_PROPS_dict.items():
@@ -638,11 +653,13 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
             nu = m_dict.get('U', 0)
             rho_w = m_dict.get('W', 0) if m_dict.get('W') is not None else m_dict.get('WEIGHTPERVOLUME', 0)
             rho_m = rho_w / grav
+            m_dict['GSA_weight_density'] = rho_w
+            m_dict['GSA_mass_density'] = rho_m
             alpha = m_dict.get('A', 0)
             mat_type = m_dict.get('DESIGNTYPE') if m_dict.get('W') is not None else m_dict.get('TYPE', 0)
+            # MAT_ANAL | num | MAT_ELAS_ISO | name | colour | 6 | E | nu | rho | alpha | G | damp |
             ostr = [str(val) for val in ['MAT_ANAL', m_ID, 'MAT_ELAS_ISO', m_name, 
                     'NO_RGB', '6', E_val, nu, rho_m, alpha]]
-            #gwa.write('PROP_SEC.2\t{:d}\t{:s}\t\t{:s}\t{:s}\n'.format(fp, name, '', desc))
             gwa.write('\t'.join(ostr) + '\n')
         
         # Generate list of design materials & write to GWA file
@@ -650,20 +667,27 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
         steel_ID = 0
         conc_ID = 0
 
+        design_mat_lookup = {}
         for name, mat_dict in MAT_PROPS_dict.items():
-            if mat_dict.get('W') is not None:
+            m_ID = mat_dict.get('ID', '')
+            if mat_dict.get('W') is not None: # To detect ETABS data format
                 mat_type = mat_dict.get('DESIGNTYPE', '')
             else:
                 mat_type = mat_dict.get('TYPE', '')
-
+            mat_dict['GWA_Type'] = ETABS2GWA_mat_type_dict.get(mat_type, 'OTHER')
+            
             if debug: print(f'Material = {name}; Material_Type = {mat_type}')
             if mat_type.casefold().startswith('conc'):
                 conc_ID += 1
+                design_mat_lookup[m_ID] = str(conc_ID)
                 GWA_mat_string_list.append(GWA_mat_string(name, mat_dict, num=conc_ID, grav=grav, debug=debug))
             elif mat_type.casefold() == 'steel':    
                 steel_ID += 1
+                design_mat_lookup[m_ID] = str(steel_ID)
                 GWA_mat_string_list.append(GWA_mat_string(name, mat_dict, num=steel_ID, grav=grav, debug=debug))
-            
+            else:
+                design_mat_lookup[m_ID] = ''
+
         # write to file
         for GWA_line in GWA_mat_string_list:
             gwa.write(GWA_line + '\n')
@@ -694,6 +718,15 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
         # | mass | stress } | is_env { | energy | carbon | recycle | user }
         # PROP_SEC.2 | num | name | colour | type | desc | anal | mat | grade |
         # PROP_SEC.3 | num | name | colour | mat | grade | anal | desc | cost | ref_point | off_y | off_z |
+        # ref_point is base reference point: []
+        # GSA
+        # ref_points = ['CENTROID', 'TOP_LEFT', 'TOP_CENTRE', 'TOP_RIGHT', 'MID_LEFT', 'MID_RIGHT', 'BOT_LEFT', 'BOT_CENTRE', 'BOT_RIGHT']
+        # ref_points_dict = {10:'CENTROID', 7:'TOP_LEFT', 8:'TOP_CENTRE', 9:'TOP_RIGHT', 4:'MID_LEFT', 5:'CENTROID', 
+        #            6:'MID_RIGHT', 1:'BOT_LEFT', 2:'BOT_CENTRE', 3:'BOT_RIGHT', 11:'CENTROID'} # mapping
+        #
+        # ETABS Cardinal Points
+        #cardinal_pts = {1:'Bottom left', 2:'Bottom center', 3:'Bottom right', 4:'Middle left', 5:'Middle centre', 
+        #            6:'Middle right', 7: 'Top left', 8:'Top center', 9:'Top right', 10:'Centroid', 11:'Shear center'}
         # [grade is design material, anal is analysis material]
         # [ref_point - base reference point = CENTROID,TOP_LEFT, TOP_CENTRE, TOP_RIGHT, MID_LEFT, MID_RIGHT, BOT_LEFT, BOT_CENTRE, BOT_RIGHT]
         # [type = GENERIC | BEAM | COLUMN, prin not used, type = NA	not-applicable, WELDED welded, ROLLED hot-rolled, FORMED formed]
@@ -728,14 +761,41 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
             m_dict = MAT_PROPS_dict.get(mat_name, {})
             mat_ID = m_dict.get('ID', 1)
             fp_ID = fp_dict.get('ID', '')
+            cost = fp_dict.get('PRICE', 0)
             desc = fp_dict.get('GWA', 'EXPLICIT')
             mat_type = m_dict.get('TYPE','').upper()
             mat_type = mat_type if (mat_type in mat_types) else 'GENERIC'
+            mat_dens = m_dict.get('GSA_mass_density', None)
+            if mat_dens is None:
+                lineal_density = 0
+                if debug: print(f'frame_prop: {fp_name}: {mat_name} has no density specified')
+            else:
+                lineal_density = m_dict['GSA_mass_density'] * fp_dict.get('A', 0)
+            # PROP_SEC.2 | num | name | colour | type | desc | anal | mat | grade |
             ostr2 = [str(val) for val in ['PROP_SEC.2', fp_ID, fp_name, 'NO_RGB', '', 
                      desc, mat_ID, mat_type]]
-            #gwa.write('PROP_SEC.2\t{:d}\t{:s}\t\t{:s}\t{:s}\n'.format(fp, name, '', desc))
-            gwa.write('\t'.join(ostr2) + '\n')
-        
+            # PROP_SEC.3 | num | name | colour | mat | grade | anal | desc | cost | ref_point | off_y | off_z |
+            ostr3 = [str(val) for val in ['PROP_SEC.3', fp_ID, fp_name, 'NO_RGB', mat_type, 
+                     design_mat_lookup.get(mat_ID,''), mat_ID, desc, cost, 'CENTROID', 0, 0]]
+            gwa.write('\t'.join(ostr3) + '\n')
+
+            # Modifiers if required
+            # Area, Iyy, Izz, J, Ky, Kz, Vol
+            modifiers = ['AMOD', 'I3MOD', 'I2MOD', 'JMOD', 'AS3MOD', 'AS2MOD', 'WMOD'] #, 'MMOD']
+            if any(fp_dict.get(val, None) for val in modifiers):
+                mod = 'STIFF' # 'GEOMETRY' # 
+                centroid = 'CEN' # 'SEC'
+                stress = 'MOD' # 'UNMOD', 'NONE'
+                prin = 'YZ' # 'UV'
+                # GSA modifier is either 'BY' or 'TO'
+                
+                mod_txt = [f'BY\t{fp_dict.get(val,1):6.4f}' for val in modifiers]
+                mass_fac  = fp_dict.get('MMOD', 1.0)
+                sec_add_mass = lineal_density * (mass_fac - 1)  # additional non-structural mass/length
+                ostr0 = [str(val) for val in ['SECTION_ANAL.4', fp_ID, fp_name, mod, centroid, 
+                            stress, mod_txt[0], prin] + mod_txt[1:] + [sec_add_mass]]
+                gwa.write('\t'.join(ostr0) + '\n')
+
         
         # ============================
         # ===== Shell Properties =====
@@ -752,18 +812,56 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
         # PROP_2D.8	1	S250	NO_RGB	SHELL	LOCAL	1	GENERIC	0	0	250(mm)	CENTROID	0	0	100%	-0%	100%	100%
         for sp_name, sp_dict in SHELL_PROPS_dict.items():
             sp_ID = sp_dict.get('ID', '')
-            m_name = sp_dict.get('MATERIAL', sp_dict.get('CONCMATERIAL', ''))
-            m_dict = MAT_PROPS_dict.get(m_name, {})
+            mat_name = sp_dict.get('MATERIAL', sp_dict.get('CONCMATERIAL', ''))
+            m_dict = MAT_PROPS_dict.get(mat_name, {})
             m_ID = m_dict.get('ID', 1)
+            shell_colour = 'NO_RGB'
+            shell_axis = 'LOCAL'
             desc = sp_dict.get('GWA', 'EXPLICIT')
             shell_type = shell_type_dict.get((sp_dict.get('TYPE', 'shell').lower()))
-            thickness = max([sp_dict.get(t, 0) for t in ['SLABTHICKNESS', 'WALLTHICKNESS','DECKTHICKNESS']])
-            ostr = ['PROP_2D.2',str(sp_ID), sp_name, 'NO_RGB', 'LOCAL', str(m_ID),
-                    shell_type, str(thickness), '0.0', '100.0%', '100.0%', '100.0%']
-            # '.format(fa, name, 'LOCAL', 1, thickness))
-            #gwa.write('PROP_SEC.2\t{:d}\t{:s}\t\t{:s}\t{:s}\n'.format(fp, name, '', desc))
-            gwa.write('\t'.join(ostr) + '\n')
-                
+            thickness = max([sp_dict.get(t, 0) for t in ['SLABTHICKNESS', 'WALLTHICKNESS','DECKTHICKNESS','DECKSLABDEPTH']])
+            mat_dens = m_dict.get('GSA_mass_density', None)
+            if mat_dens is None:
+                mass_per_area = 0
+                if debug: print(f'shell_prop: {sp_name}: {mat_name} has no density specified')
+            else:
+                mass_per_area = m_dict['GSA_mass_density'] * thickness
+            
+            # PROP_2D.2 | num | name | colour | axis | mat | type | thick | mass | bending | inplane | weight
+            #ostr2 = ['PROP_2D.2',str(sp_ID), sp_name, 'NO_RGB', 'LOCAL', str(m_ID),
+            #        shell_type, str(thickness), '0.0', '100.0%', '100.0%', '100.0%']
+            ostr2 = [str(val) for val in ['PROP_2D.8',sp_ID, sp_name, shell_colour, shell_axis, m_ID,
+                    shell_type, thickness, '0.0', '100.0%', '100.0%', '100.0%']]
+            
+            # PROP_2D.8 | num | name | colour | type | axis | mat | mat_type | grade | design | profile | ref_pt | ref_z | mass | flex | shear | inplane | weight |
+            shell_type = 'SHELL'  # 'FABRIC', 'PLATE', 'SHELL', 'CURVED', 'WALL', 'STRESS', 'STRAIN', 'AXI', 'LOAD'
+            #shell_axis = 'LOCAL'
+            shell_mat = m_ID   #  Number of the analysis material (if mat < 0: layer material, layer thickness, layer angles)
+            # ['STEEL', 'CONCRETE', 'FRP', 'ALUMINIUM', 'GLASS', 'TIMBER', 'GENERIC', 'FABRIC']
+            mat_type = m_dict.get('GWA_Type', 'GENERIC')  
+            grade = design_mat_lookup.get(shell_mat, 0)   # Number of the design material
+            design = 0   # design property  ???
+            profile = f'{thickness}({units.length})'   #  need to provide units
+            ref_pt = 'CENTROID'  # 'TOP_CENTRE', 'BOT_CENTRE' # reference surface
+            ref_z = 0  # z offset from reference surface
+            # Modifiers...
+            # SHELLPROP  "Slab1"  F11MOD 1.001 F22MOD 1.01 F12MOD 1.02 M11MOD 1.03 M22MOD 1.04 M12MOD 1.05 V13MOD 1.06 V23MOD 1.07 MMOD 1.08 WMOD 1.09
+            mass_fac = sp_dict.get('MMOD', 1.0)
+            shell_add_mass = mass_per_area * (mass_fac - 1)   # additional mass per unit area [kg/m²] this could take account of MMOD
+            flex_fac = sum(sp_dict.get(fac, 1.0) for fac in ('M11MOD', 'M22MOD')) / 2.0
+            flex_mod = f'{flex_fac * 100}%'   # stiffness modifier for bending
+            shear_mod = f"{sp_dict.get('F12MOD', 1.0) * 100}%"   #   stiffness modifier for shear
+            inplane_fac = sum(sp_dict.get(fac, 1.0) for fac in ('F11MOD', 'F22MOD')) / 2.0
+            inplane_mod = f'{inplane_fac * 100}%'   #  stiffness modifier for inplane stiffness
+            weight_fac = sp_dict.get('WMOD', 1.0)
+            weight_mod = f'{weight_fac * 100}%'   #  stiffness modifier for weight
+            ostr8 = [str(val) for val in ['PROP_2D.8', sp_ID, sp_name, shell_colour, shell_type, shell_axis, 
+                    shell_mat, mat_type, grade, design, profile, ref_pt, ref_z, shell_add_mass, flex_mod, shear_mod, 
+                    inplane_mod, weight_mod]]
+    
+            #gwa.write('\t'.join(ostr2) + '\n')
+            gwa.write('\t'.join(ostr8) + '\n')
+               
         
         # =============================
         # ===== Spring Properties =====
@@ -901,9 +999,12 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
             release = bm_dict.get('RELEASE', '')   # "TI M2I M3I TJ M2J M3J"
             
             if release:
+                # set_releases 
                 releases_txt = ['RLS\t' + rel for rel in set_releases(release, segment_num)]
+                mem_releases_txt = [rel for rel in set_releases(release, 1)]
             else:
                 releases_txt = ['NO_RLS'] * segment_num
+                mem_releases_txt = ['FFFFFF', 'FFFFFF']
             
             # GSA cannot do property modifications for individual members
             #propmods = [bm_dict.get(propmod, 1) for propmod in 
@@ -942,9 +1043,13 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
                         'ALL', prop_num, prop_num, ' '.join([str(nd) for nd in nds]), '', 
                         bm_angle, mesh_size, is_intersector, 'BEAM', 0, 0, 0, 0, 0, 0, dummy, ]]
             # TODO: these additional pieces of information do not work - perhaps Free, Free should not be there if NO_RLS
-            #ostr6 = [str(val) for val in ['Free', 'Free', 'AUTOMATIC', 0, 'SHR_CENTRE', 'OFF', 'MAN', 'MAN'] ]           
+            if any(offsets):
+                ostr6 = [str(val) for val in ['Free', 'Free', 'AUTOMATIC', 0, 'SHR_CENTRE', 'OFF', 'MAN', 'MAN'] + \
+                    list(offsets) ] 
+            else:
+                ostr6 = []          
             # TODO: identify and eliminate the generation of extra nodes
-            gwa.write('\t'.join(ostr5 + [rel_txt]) + '\n') # + ostr6 + [offsets_txt]) + '\n')
+            gwa.write('\t'.join(ostr5 + mem_releases_txt + ostr6) + '\n')
 
         if debug: print(f'     Max beam ID is: {bm_max}')
         
@@ -1039,11 +1144,11 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
             abs_elev = data.get('ABS_ELEV')
             if GSA_num < 10:
                 axis = 0
-                ostr = ['GRID_PLANE', str(s+1), story, str(axis), 'ELEV', str(abs_elev), 
+                ostr = ['GRID_PLANE', str(s+1), str(story), str(axis), 'ELEV', str(abs_elev), 
                         'all\tONE\t0.0\t0\t.01\tSTOREY\tPLANE_CORNER\t0.0\t0.0']
                 gwa.write('\t'.join(ostr) + '\n')
             else:
-                ostr = ['GRID_PLANE.4', str(s+1), story, 'STOREY\t0',str(abs_elev),'0\t0']
+                ostr = ['GRID_PLANE.4', str(s+1), str(story), 'STOREY\t0',str(abs_elev),'0\t0']
                 gwa.write('\t'.join(ostr) + '\n')
             
         
@@ -1101,7 +1206,20 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
         
         # ** Writing Diaphragm Constraints to GWA **
         # Add diaphragms based on groups for each floor 
-        for diaph_key, diaph_node_list in DIAPHRAGM_GROUPS_dict.items():
+        # DIAPHRAGMS_dict contains listings for each diaphragm
+        # e.g. {'D1': {'TYPE': None, 'RIGID': None}, 'D2': None}
+        # DIAPHRAGM_GROUPS_dict contains groupings of all points assigned to a diaphragm at a floor
+        #   Note that the nodes that are disconnected are also grouped...
+        # e.g. {('33F', 'D1'):[(101, '33F'), (104, '33F'), (16, '33F')], ...,
+        #            ('3F', 'DISCONNECTED'): [(101, '3F'), (104, '3F'), (27, '3F')], ...}
+        
+        # list diaphragms sorted on elevation
+        d_keys = list(DIAPHRAGM_GROUPS_dict.keys())
+        d_keys.sort(key = lambda x : STORY_dict.get(x[0]).get('ABS_ELEV'))
+        
+        # for diaph_key, diaph_node_list in DIAPHRAGM_GROUPS_dict.items():
+        for diaph_key in d_keys:
+            diaph_node_list = DIAPHRAGM_GROUPS_dict.get(diaph_key, [])
             n_list = [NODE_dict.get(nd_key,{}).get('ID') for nd_key in diaph_node_list]
             g_name = f'Diaphragm {diaph_key[1]} @ {diaph_key[0]}'
             # LIST | num | name | type | list
@@ -1112,10 +1230,20 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
             list_id += 1
 
             diaph_dict = DIAPHRAGMS_dict.get(diaph_key[1], {})
-            diaphragm_type = diaph_dict.get('TYPE', 'RIGID')
+            if diaph_key[1] == 'DISCONNECTED':
+                diaphragm_type = None
+            else:
+                if len(diaph_dict.keys()) == 0:
+                    diaphragm_type = 'RIGID'
+                elif ('RIGID' in diaph_dict.keys()) and (diaph_dict.get('TYPE','') is None):
+                    diaphragm_type = 'RIGID'
+                else:
+                    diaphragm_type = None
+                # diaphragm_type = diaph_dict.get('TYPE', 'RIGID')
+
             g_string = r'"""' + str(g_name) + r'"""'
             if diaphragm_type == 'RIGID':
-                d_type = 'XY_PLANE_PIN'
+                d_type = 'XY_PLANE'
                 ostr = [str(val) for val in ['RIGID.3', g_name, 0, d_type, g_string,'all','']]
                 gwa.write('\t'.join(ostr) + '\n')
 
@@ -1191,6 +1319,7 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
             'QUAKE': 'SEISMIC',
             'Dead': 'DEAD',
             'Live': 'IMPOSED',
+            'Reducible Live': 'IMPOSED',
             'Wind': 'WIND',
             'Seismic': 'SEISMIC',
         }
@@ -1387,6 +1516,31 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False):
         # ** Writing Load Combinations to GWA **
         # COMBINATION | case | name | desc | bridge | note
         # LOAD_COMBO_dict
+
+        # ===============================
+        # ========= EQ Spectra  =========
+        # ===============================
+        # Extracts and exports user-defined spectra
+        # SPECTRUM.1	1	SPEC	USER	PERIOD	ACCEL	"(0,20.6206) (0.1,23.4851) (4.9,8.25021) (5,8.25021)"	CONST	CODE	0.05
+        
+        func_dict = E2K_dict.get('FUNCTIONS',{}).get('FUNCTION', {})
+        spectrum_keys = [k for k, v in func_dict.items() if v.get('FUNCTYPE','') == 'SPECTRUM' and v.get('SPECTYPE','') == 'USER']
+        
+        if debug: print(f'\n===== Writing {len(spectrum_keys)} User Spectra to GWA =====')    
+        
+        for i, k in enumerate(spectrum_keys):
+            damp = func_dict[k].get('DAMPRATIO', 0.0)
+            damp_data = ['CONST', 'CODE', damp]
+            time_val_list = func_dict[k].get('TIMEVAL', "")
+            if len(time_val_list) > 0:
+                data = ' '.join(time_val_list).split()
+                timeacc_txt = '"' + ' '.join([f'({t},{grav * float(a)})' for t, a in zip(data[0::2], data[1::2])]) + '"'
+                #print(f'SPECTRUM.1\t{i+1}\tSPEC\tUSER\tPERIOD\tACCEL\t' + txt)
+                ostr = [str(val) for val in ['SPECTRUM.1', i+1, 'SPEC', 'USER', 'PERIOD', 'ACCEL'] + [timeacc_txt] + damp_data ]
+                gwa.write('\t'.join(ostr) + '\n')
+
+
+
 
         if debug: 
             #print('\n**********************************************')
