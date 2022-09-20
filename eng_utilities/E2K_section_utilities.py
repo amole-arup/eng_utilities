@@ -167,6 +167,35 @@ def CHS_props_func(pdict):
         return {}
 
 
+def General_props_func(pdict):
+    """Properties of an I-section when given a dictionary of D, B, TF, TW
+
+    This data comes from the 'FRAMESECTION' keyword. Typical data:  
+    {'MATERIAL': "SM570",  'SHAPE': "General",  
+    'D': 0.413, 'B': 0.413, 'AREA': 0.021, 'AS2': 0.021, 'AS3': 0.021, 
+    'I33': 0.000354, 'I22': 0.000354, 'I23': 8.673617E-19, 
+    'S33POS': 0.001716, 'S33NEG': 0.001716, 'S22POS': 0.001716, 'S22NEG': 0.001716, 
+    'R33': 0.12991, 'R22': 0.12991, 'Z33': 0.001716, 'Z22': 0.001716, 'TORSION': 0.003433}
+
+    The resulting GWA description is 'EXP(m) 0.021 0.000354 0.000354 0.003433 1.0 1.0'
+    
+    >>> General_props_func({'D':15, 'B':12, 'TF':3, 'TW':2})
+    {'P': 74, 'A': 90, 'Avy': 72, 'Avz': 30, 'Iyy': 2767.5, 'Izz': 858.0}
+    """
+    AREA = pdict.get('AREA', 0)
+    Iyy = pdict.get('I33', 0)
+    Izz = pdict.get('I22', 0)
+    J = pdict.get('TORSION', 0)
+    Kyy = 1.0 if (not AREA) else pdict.get('AS3', 0) / AREA
+    Kzz = 1.0 if (not AREA) else pdict.get('AS2', 0) / AREA
+    units = pdict.get('UNITS')
+    GWA = f'EXP({units}) {AREA} {Iyy} {Izz} {J} {Kyy} {Kzz}'
+    if AREA:
+        return {**pdict, **{'GWA': GWA}}
+    else:
+        return {} 
+
+
 def I_props_func(pdict):
     """Properties of an I-section when given a dictionary of D, B, TF, TW
     
