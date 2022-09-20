@@ -4,9 +4,13 @@ from os import listdir
 from os.path import exists, isfile, join, basename, splitext
 import xmltodict
 import pickle
+import sys
+import os
 
 from eng_utilities.general_utilities import try_numeric, units_conv_dict, units_lookup_dict 
 from eng_utilities.geometry_utilities import *
+
+#sys.path.append(f'{os.path.dirname(__file__)}')  # /. ??
 
 
 prop_dims_dict = {
@@ -27,7 +31,7 @@ def convert_prop_units(shape_dict, model_length_units):
     if no conversion is defined, e.g. for forces into length(!)
     
     Args:
-        shape_dict (dict): should contain at least area `A1 and 
+        shape_dict (dict): should contain at least area `A` and 
             length units `UNITS`, e.g. {'A':2.1, 'UNITS':'m'}
         model_length_units (str): the length units in the model
     """
@@ -123,29 +127,60 @@ def section_file_parser(root_dir, file_list = [], flatten=False, flat=False):
     return sec_d4
 
 
-def build_section_dict(root_dir=None, flat = False):
-    """"""
-    if not root_dir:
-        root_dir = r'C:\Program Files\Computers and Structures\ETABS 17'
+def build_section_dict(ETABS_root_dir=None, flat = False, reimport = False, debug=False):
+    """Generates a section dictionary from the ETABS section database
+    unless a pickled dictionary already exists (can be overriden). 
+
+    The section dictionary created will be stored as a pickle file for future reference
+
+    Args:
+        root_directory: this is the root directory for the ETABS installation. If this 
+            is not specified, then it will look in the standard locations:
+            `C:\Program Files\Computers and Structures\ETABS nn`
+        flat: this will make a flat directory (not fully tested)
+        reimport: this will force the generation of a new dictionary
+            from the ETABS section files, even if a pickle file exists.
+
+    """
+    # This checks for a pickled section file and returns it if available
+    picklePath = join(os.path.dirname(__file__), 'section_dict.pkl')
+    if debug:
+        print(picklePath)
+        print('\nSection File ' + ('exists:' if exists(picklePath) else 'NOT found:') + \
+            f' {picklePath}\n')
+    if exists(picklePath) and not reimport: # Switch reimport to True to re-import
+        return pickle.load(open(picklePath, 'rb'))
     
-    # This checks for a pickled section file
-    if isfile('section_dict.pkl') and True: # Switch to False to re-import
-        section_def_dict = pickle.load(open('section_dict.pkl', 'rb'))
+    if ETABS_root_dir is not None:
+        # if the specified directory does not exist, then set path to `None`
+        if not exists(ETABS_root_dir):
+            ETABS_root_dir = None
+    
+    if ETABS_root_dir is None:
+        # Directory containing section data has not been provided
+        CSi_dir = r'C:\Program Files\Computers and Structures'
+        ETABS_dirs = [folder for folder in listdir(CSi_dir) if folder.startswith('ETABS')]
         
-    else:
-        root_dir = r'C:\Program Files\Computers and Structures\ETABS 17'
-        dir1 = 'Property Libraries Old'
-        dir2 = 'Property Libraries'
-        file_list1 = listdir(join(root_dir, dir1))
-        xml_list1 = [fl for fl in file_list1 if fl.endswith('xml')]
-        file_list2 = listdir(join(root_dir, dir2))
-        xml_list2 = [fl for fl in file_list2 if fl.endswith('xml')]
-        xml_list = [join(dir1, file) for file in xml_list1] + \
-                [join(dir2, file) for file in xml_list2]
-        # Process section data
-        section_def_dict = section_file_parser(root_dir, xml_list, flatten=True, flat=flat)
-        # Do pickle dump for future access
-        pickle.dump(section_def_dict, open('section_dict.pkl', 'wb'))
+        if len(ETABS_dirs) == 0:
+            return {}
+        for ETABS_dir in ETABS_dirs:
+            if exists(join(CSi_dir, ETABS_dirs[-1],'Property Libraries')):
+                ETABS_root_dir = join(CSi_dir, ETABS_dir)
+        if ETABS_root_dir is None:
+            return {}
+    
+    dir1 = 'Property Libraries Old'
+    dir2 = 'Property Libraries'
+    file_list1 = listdir(join(ETABS_root_dir, dir1))
+    xml_list1 = [fl for fl in file_list1 if fl.endswith('xml')]
+    file_list2 = listdir(join(ETABS_root_dir, dir2))
+    xml_list2 = [fl for fl in file_list2 if fl.endswith('xml')]
+    xml_list = [join(dir1, file) for file in xml_list1] + \
+            [join(dir2, file) for file in xml_list2]
+    # Process section data
+    section_def_dict = section_file_parser(ETABS_root_dir, xml_list, flatten=True, flat=flat)
+    # Do pickle dump for future access
+    pickle.dump(section_def_dict, open(picklePath, 'wb'))
         
     return section_def_dict
 
@@ -154,7 +189,7 @@ def build_section_dict(root_dir=None, flat = False):
 ## === Section  Utilities ===
 ## ==========================
 
-def A_props(D, B, TF, TW):
+def A_props(D, B, TF, TW, ETABS=True):
     """Properties of single angle"""
     A = B * D - (D-TF) * (B-TW)
     Cz = 0.5 * (D**2 * TW + TF**2 * (B - TW)) / A
@@ -167,7 +202,7 @@ def A_props(D, B, TF, TW):
     p = 0.5 * (Iyy+Izz)
     q = (0.25 * (Iyy-Izz)**2 + Iyz**2)**0.5
     I1, I2 = p - q, p + q
-    if True:
+    if ETABS:
         return {'P': 2*(B+D), 'C3': Cy, 'C2': Cz, 
             'A': A, 'AS3': (B-TW)*TF, 'AS2': (D-TF)*TW, 
             'I33': Iyy, 'I22': Izz, 'I23': Iyz, 
@@ -179,7 +214,7 @@ def A_props(D, B, TF, TW):
             'Iuu': I1, 'Ivv': I2, 'theta_rad':theta}
 
 
-def AA_props(D, B, TF, TW, DIS=0):
+def AA_props(D, B, TF, TW, DIS=0, ETABS=True):
     """Properties of double angle
     Note that B is the sum of two legs + the distance between 
     the angles (DIS)
@@ -190,7 +225,7 @@ def AA_props(D, B, TF, TW, DIS=0):
     Cy = 0
     Iyy = 2 * ((TW * D**3 + B0 * TF**3 - TW*TF**3) / 3 - A * Cz**2)
     Izz = ((TF * B0**3 + D * TW**3 - TF*TW**3) / 3 - A * (0.5*DIS)**2)
-    if True:
+    if ETABS:
         return {'P': 2*(B0+D), 'C3': Cy, 'C2': Cz, 
             'A': A, 'AS3': 2*(B0-TW)*TF, 'AS2': 2*(D-TF)*TW, 
             'I33': Iyy, 'I22': Izz}
@@ -200,7 +235,7 @@ def AA_props(D, B, TF, TW, DIS=0):
             'Iyy': Iyy, 'Izz': Izz}
 
 
-def T_props(D, B, TF, TW):
+def T_props(D, B, TF, TW, ETABS=True):
     """Properties of a Tee
     """
     # Cz dimensions initially measured from top,
@@ -210,22 +245,22 @@ def T_props(D, B, TF, TW):
     Cy = 0
     Iyy =  ((B - TW) * TF**3 + D**3 * TW) / 3 - A * Cz**2
     Izz = (B**3 * TF + (D - TF) * TW**3) / 12
-    if True:
+    if ETABS:
         return {'P': 2*(B+D), 'C3': Cy, 'C2': D - Cz, 
             'A': A, 'AS3': 0.9*B*TF, 'AS2': (D-TF)*TW, 
             'I33': Iyy, 'I22': Izz}
     else:
-        return {'P': 2*(B0+D), 'Cy': Cy, 'Cz': D - Cz, 
+        return {'P': 2*(B+D), 'Cy': Cy, 'Cz': D - Cz, 
             'A': A, 'Avy': 0.9*B*TF, 'Avz': (D-TF)*TW, 
             'Iyy': Iyy, 'Izz': Izz}
 
 
-def R_props(D, B):
+def R_props(D, B, ETABS=True):
     """Properties of rectangle"""
     A = B * D
     Iyy = B * D**3 / 12
     Izz = D * B**3 / 12
-    if True:
+    if ETABS:
         return {'P': 2*(B+D), 'A': A, 'AS3': 0.833*A, 'AS2': 0.833*A, 
             'I33': Iyy, 'I22': Izz}
     else:
@@ -233,7 +268,7 @@ def R_props(D, B):
             'Iyy': Iyy, 'Izz': Izz}
 
     
-def RH_props(D, B, TF, TW):
+def RH_props(D, B, TF, TW, ETABS=True):
     """Properties of hollow rectangle (tube)
     
     >>> RH_props(12, 15, 3, 2)
@@ -242,7 +277,7 @@ def RH_props(D, B, TF, TW):
     A = B*D - (B-2*TW)*(D-2*TF)
     Iyy = B*D**3/12 - (B-2*TW)*(D-2*TF)**3/12
     Izz = D*B**3/12 - (D-2*TF)*(B-2*TW)**3/12
-    if True:
+    if ETABS:
         return {'P': 2*(B+D), 'A': A, 'AS3': 2*TF*(B-2*TW), 'AS2': 2*TW*(D-2*TF), 
             'I33': Iyy, 'I22': Izz}
     else:
@@ -250,21 +285,21 @@ def RH_props(D, B, TF, TW):
             'Iyy': Iyy, 'Izz': Izz}
 
 
-def C_props(D):
+def C_props(D, ETABS=True):
     """Properties of a circle or rod"""
     A = 0.25 * pi * D**2
     I = pi * D**4 / 64   # check this
-    if True:
+    if ETABS:
         return  {'P': pi*D, 'A': A, 'AS3': 0.9*A, 'AS2': 0.9*A, 'I33': I, 'I22': I}
     else:
         return  {'P': pi*D, 'A': A, 'Avy': 0.9*A, 'Avz': 0.9*A, 'Iyy': I, 'Izz': I}
 
 
-def CHS_props(D, T):
+def CHS_props(D, T, ETABS=True):
     """Properties of a hollow circle or pipe"""
     A = 0.25 * pi * (D**2 - (D-2*T)**2)
     I = pi * (D**4 - (D-2*T)**4) / 64
-    if True:
+    if ETABS:
         return  {'P': pi*D, 'A': A, 'AS3': 0.6*A, 'AS2': 0.6*A, 'I33': I, 'I22': I}
     else:
         return  {'P': pi*D, 'A': A, 'Avy': 0.6*A, 'Avz': 0.6*A, 'Iyy': I, 'Izz': I}
@@ -290,7 +325,7 @@ def I_props(D, B, TF, TW, ETABS=True):
         'Zyy': Zyy, 'Zzz': Zzz, 'Syy': Syy, 'Szz': Szz}
 
 
-def CH_props(D, B, TF, TW):
+def CH_props(D, B, TF, TW, ETABS=True):
     """Properties of an C-section
     """
     A = B*D - (B-TW)*(D-2*TF)
@@ -300,7 +335,7 @@ def CH_props(D, B, TF, TW):
     Cz = 0
     Iyy = B*D**3/12 - (B-TW)*(D-2*TF)**3/12
     Izz = (2*TF*B**3 + (D-2*TF)*TW**3) / 3 - A * Cy**2
-    if True:
+    if ETABS:
         return {'P': P ,'A': A, 'AS3': 2*TF*B, 'AS2': TW*D, 'I33': Iyy, 'I22': Izz}
     else:
         return {'P': P ,'A': A, 'Avy': 2*TF*B, 'Avz': TW*D, 'Iyy': Iyy, 'Izz': Izz}
@@ -322,7 +357,7 @@ def deck_props(DD, DR, B, TT, TB):
 def get_cat_sec_props(f_dict, section_def_dict):
     """Returns catalogue section properties as a dictionary when given 
     standard ETABS section information in the form of a dictionary"""
-    area, units = None, None
+    # area, units = None, None
     prop_file = f_dict['FILE']
     #print('prop_file: ', prop_file)
     if prop_file in section_def_dict.keys():

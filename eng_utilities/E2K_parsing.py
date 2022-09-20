@@ -3,6 +3,7 @@
 Functions exist for pushing the data out to a GSA text file.
 
 TODO:
+- openings in floor diaphragms
 - revise default parsing so that two keys at the beginning become nested keys
     of nested dictionaries. Also, single key and value become a dictionary
     but that when parsing a subsequent line, a check is carried out for a
@@ -13,22 +14,23 @@ TODO:
 - coordinate systems (25%)
 - grid layouts (0%)
 - functions (response spectra, ground motions etc) (0%)
-- Wind loads (0%)
-- Seismic loads (0%)
+- wind loads (0%)
+- seismic loads (0%)
 - logs (0%)
 - add filled steel tubes / pipes (MATERIAL & FILLMATERIAL props & quantities) (10%)
 - add section pools (20%)
 - add buckling restrained beams (10%)
 - embedded sections (80%)
-- NONE sections -> dummy
 - check deck properties
-
-Note: At the moment there is no log kept of elements that do not "make sense".
-This could be useful for identifying how complete the record is.
+- add logging: At the moment there is no log kept of elements that do not "make sense".
+  This could be useful for identifying how complete the record is.
+- LINECURVEDATA - just found it and I didn't know what it was...
+- sort out situation where embed is an SD section
 
 DONE:
 - split beams at intersections (100%)
 - add point and area loads (including point loads on beams) (100%)
+- NONE sections -> dummy
 
 """
 
@@ -84,7 +86,7 @@ def gather(data):
 
 
 # If top-level dict matches first item and sub-dict doesn't, then 
-def try_branch(a_dict, data_coll):
+def try_branch(a_dict, data_coll, debug=False, keyword=''):
     """When provided with a bunched line, it sets up  
     dictionaries and subdictionaries in a tree structure
     based on branching.
@@ -96,35 +98,41 @@ def try_branch(a_dict, data_coll):
     if try_1 is None:  # if there isn't an entry already
         #print(f'{a} Not found, add {a}:, {b}: & {data_coll[1:]}')
         a_dict[a] = {b:{k:v for k, v in data_coll[1:]}}
+    
     elif a_dict[a].get(b) is not None:  #  try_merge
         #print(f'{a}  found')
         #print(f'OK : {a_dict[a]}  {b}  -> {a_dict[a].get(b)} therefore, try_merge')
         b_dict = a_dict[a][b]
-        try_merge(b_dict, data_coll[1:])
-        a_dict[a][b] = b_dict.copy()
+        if b_dict == dict(data_coll[1:]): # ignore repeated lines
+            pass
+        else:
+            try_merge(b_dict, data_coll[1:], debug=debug, keyword=keyword)
+            a_dict[a][b] = b_dict.copy()
     else:  # try_branch (tested)
         #print(f'{a}  found')
         #print(f'Not: {a_dict[a]}  {b}  -> {a_dict[a].get(b)}')
         a_dict[a][b] = {k:v for k, v in data_coll[1:]}
 
 
-def try_merge(a_dict, data_coll):
+def try_merge(a_dict, data_coll, debug=False, keyword=''):
     """When the line of data has a key that matches an existing one
     it merges the data into the dictionary under the existing key"""
     try:
         ## - Snip start
         if not isinstance(data_coll, (list, tuple)):
-            print(f'In try_merge, data_coll is {data_coll}')
+            if debug:
+                print(f'In try_merge ({keyword}), data_coll is {data_coll} (type: {type(data_coll)})')
         elif not isinstance(data_coll[0], (list, tuple)):
-            print(f'In try_merge, data_coll is {data_coll}')
+            if debug:
+                print(f'In try_merge ({keyword}), data_coll[0] is {data_coll} (type: {type(data_coll[0])})')
         elif data_coll[0][0] == 'SHAPE':
             # c_dict = a_dict.copy()
-            try_branch(a_dict, data_coll)
+            try_branch(a_dict, data_coll, debug=debug, keyword=keyword)
             return
         ## - Snip end
     except:
-        print(f'In try_merge, data_coll is {data_coll}')
-        print('Possibly a case of "IndexError: tuple index out of range"')
+        print(f'WARNING: ** In try_merge ({keyword}), data_coll is {data_coll} (type: {type(data_coll)})')
+        print('WARNING: (cont\'d)) Possibly a case of "IndexError: tuple index out of range" **')
 
     for data in data_coll:
         try_1 = a_dict.get(data[0], None)
@@ -153,15 +161,16 @@ def try_merge(a_dict, data_coll):
             a_dict[data[0]] = data[1]
 
 
-def load_func(the_dict, line): # a_dict is 
+def load_func(the_dict, line, debug=False): # a_dict is 
     loadclass = line[0][0]
     member, story = line[0][1]
     line_dict = dict(line)
     key = tuple([member, story, line_dict.get('LC')])
     
-    if not the_dict.get(loadclass):
+    if the_dict.get(loadclass) is None:
         the_dict[loadclass] = dict()
-        print(f'Starting to parse {loadclass}')
+        if debug:
+            print(f'Starting to parse {loadclass}')
     a_dict = the_dict[loadclass]
     #print('a_dict', a_dict)
     a_dict[key] = a_dict.get(key, []) + list(load_parser(line_dict))
@@ -172,6 +181,10 @@ def load_parser(d):
     For loadclass = 'POINTLOAD', 'LINELOAD' or 'AREALOAD'
       LINELOAD  "B2141"  "5F"  TYPE "POINTF"  DIR "GRAV"  LC "LL_0.5"  FVAL 15  RDIST 0.4
       LINELOAD  "B2109"  "6F"  TYPE "UNIFF"  DIR "GRAV"  LC "DL"  FVAL 0.7
+      LINELOAD  "C7"  "GF"  TYPE "TEMP"  LC "THN"  T -10
+      AREALOAD  "A1"  "MEZZ"  TYPE "TEMP"  LC "THP"  T 10'
+      AREALOAD  "F1"  "G/F"  TYPE "UNIFF"  DIR "GRAV"  LC "LL"  FVAL 0.005'
+      AREALOAD  "F34"  "L1"  TYPE "UNIFLOADSET"  "BOH"
     """
     ltype = d.get('TYPE')
     direction = d.get('DIR', None)
@@ -193,6 +206,9 @@ def load_parser(d):
         forces = ('FX', 'FY', 'FZ', 'MX', 'MY', 'MZ')
         load_data = [try_numeric(d.get(item)) for item in forces]
         ldict.update({'DATA': tuple(load_data)})    
+    elif ltype == 'TEMP':  # This is for lines and shells with uniform temperature load
+        temp_data = try_numeric(d.get('T',0))
+        ldict.update({'DATA': temp_data})    
     #return {key:[ldict]}
     return [ldict]
 
@@ -235,101 +251,83 @@ def combo_func(the_dict, line):
             b_dict[data_type] = the_list
 
 
-## NOTE: `Force Line` refers to a specific polyline
-## format that is intended to represent properties
-## along a line as a 2D shape anchored on a baseline
-## (0,0) to (1,0). The function `build_force_line` 
-## creates a 
 
-def build_force_line(polyline, tol=1E-6):
-    """Returns an open polyline suitable for 
-    combining load profiles on a beam (trapezoids 
-    defined by coordinates on a (0,0) to (1,0) baseline).
+def add_to_dict_list(the_dict, key, value):
+    value_list = the_dict.get(key,[])
+    value_list.append(value)
+    the_dict[key] = value_list
+
+
+def story_func(the_dict, line, debug=False):
     """
-    form = [[x, y] for x, y in polyline]
-    #fix start of list
-    if form[0][0] > tol:
-        if form[0][1] > tol:
-            form = [[0, 0]] + [[form[0][0], 0]] + form
-        else:
-            form = [[0, 0]] + form
-    # fix end of list
-    if (1 - form[-1][0]) > tol:
-        if form[-1][1] > tol:
-            form = form + [[form[-1][0], 0]] + [[1,0]]
-        else:
-            form = form + [[1, 0]]
-    return form
-
-
-def tidy_force_line(form, tol = 1E-6):
-    """This will eliminate unnecessary duplicates
-    However, this could mess with the matching process and should only
-    be applied once everything has been processed"""
-    #print('form length is ', len(form))
-    if len(form) > 2:
-        formout = [form[0]]
-        v0 = sub2D(form[1], form[0])
-        for pt1, pt2, pt3 in zip(form[0:-2], form[1:-1], form[2:]):
-            v1 = sub2D(pt2, pt1)
-            v2 = sub2D(pt3, pt1)
-            sim = cos_sim2D(v1, v2) if  (mag2D(v1) > 2 * tol) else cos_sim2D(v0, v2)
-            #print(sim, ': ', pt1, pt2, pt3, sub2D(pt2, pt1), sub2D(pt3, pt1))
-            if abs(sim) < (1 - tol):
-                formout.append(pt2)
-            v0 = v1 if (mag2D(v1) > 2 * tol) else v0
-        return formout + form[-1:]
-    else:
-        return form
-
-
-def interpolate_force_line(form, x, tol=1E-6):
-    """Interpolates a new point in a form polyline
-    Used by the `add_force_line` function"""
-    form_out = [form[0]]
-    for pt1, pt2 in zip(form[:-1], form[1:]):
-        if (x - pt1[0] > 0.5 * tol and 
-            pt2[0] - x > 0.5 * tol):
-            y = pt1[1] + (x - pt1[0]) * (pt2[1] - pt1[1]) / (pt2[0] - pt1[0])
-            form_out.extend(2 * [[x, y]])
-        form_out.append(pt2)
-    return form_out
-
-
-def add_force_line(*forms): # form1, form2
+    One of the challenges is that if a Tower has been defined
+    this needs to be carried over from any previous lines (it
+    is only defined once for each line and that then applies to 
+    all following ones)
+    NB `current_tower` needs to be defined in the current namespace
+    NB2: It seems that in some versions of ETABS, if only one 
+        Tower is defined the Tower prefix is not used...
     """
-    Input is in the form of a line of coordinates
-    uniformly increasing along the x-axis
-    """
-    x_vals = sorted(set(x for x, _ in sum(forms,[]))) # form1 + form2
-    print('x_vals', x_vals)
-    new_forms = []
-    for form in forms:
-        for x in x_vals:
-            form = interpolate_force_line(form, x)
-        print('form', form)
-        new_forms.append(form)
-    xs = [x for x, y_ in new_forms[0]]
-    ys = [[y for _, y in form] for form in new_forms]
-    #sum_ys = sum(n for n in zip(ys))
-    #print('xs: ', len(xs), ': ', xs)
-    #print('forms(0): ', len(new_forms[0]), ': ', new_forms[0])
-    #print('forms(1): ', len(new_forms[1]), ': ', new_forms[1])
-    #print('ys: ', len(ys), ': ', list(zip(*ys)))
-    #return [[p1[0], p1[1] + p2[1]] for p1, p2 in zip(form1, form2)]
-    new_ys = [sum(x for x in y) for y in zip(*ys)]
-    return [[x, y] for x, y in zip(xs, new_ys)]
+    # Keep a list of stories
+    if not the_dict.get('Story_Lists'):
+        the_dict['Story_Lists'] = dict()
+    
+    line_key = line[0][0] # 'STORY'
+    # Choosing to use string numbers as numbers
+    story_basic_name = line[0][1] # str(line[0][1])
+    story_type = line[1][0] # e.g. 'HEIGHT', 'ELEV'
+    line_dict = dict(line)  # NB STORY is retained as a key-value pair
+    if line_dict.get('TOWER') is None and the_dict.get('TOWERS') is None:
+        story_name = story_basic_name
+        add_to_dict_list(the_dict['Story_Lists'], 'Default', story_name)
+    elif line_dict.get('TOWER') is not None and the_dict.get('TOWERS') is None:
+        tower = line_dict['TOWER']
+        the_dict['TOWERS'] = [tower]
+        story_name = tower + '-' + story_basic_name
+        add_to_dict_list(the_dict['Story_Lists'], tower, story_name)
+    elif line_dict.get('TOWER') is None and the_dict.get('TOWERS') is not None:
+        tower = the_dict['TOWERS'][-1]
+        line_dict['TOWER'] = tower
+        story_name = tower + '-' + story_basic_name
+        add_to_dict_list(the_dict['Story_Lists'], tower, story_name)
+    else:  # both are not None
+        new_tower = line_dict['TOWER']
+        #towers = the_dict['TOWERS']
+        #towers.append(new_tower)
+        #the_dict['TOWERS'] = towers
+        add_to_dict_list(the_dict, 'TOWERS', new_tower)
+        story_name = new_tower + '-' + story_basic_name
+        add_to_dict_list(the_dict['Story_Lists'], new_tower, story_name)
+    
+    # if the line key is not already in the dictionary, add it
+    if not the_dict.get(line_key):
+        the_dict[line_key] = dict() # the_dict['STORY']
+        #print(f'...adding {line_key} to COMBO_dict')
+    
+    # make the line key the current reference
+    a_dict = the_dict[line_key] # a_dict is the_dict['STORY']
+    
+    # if the story is not already in the dictionary, add it
+    if a_dict.get(story_name) is None:
+        a_dict[story_name] = {**line_dict}
+        if debug:
+            print(f'...adding {story_name} to {line_key} to STORY_dict')
+        
+    else:   # update
+        a_dict.update({k:v for k,v in line_dict.items()})
+    
+    #return a_dict
 
 
 # ====================================
 # ======  Main Parsing Function ======
 # ====================================
 
-def E2KtoDict(E2K_model_path, **kwargs):
+def E2KtoDict(E2K_model_path, debug=False, **kwargs):
     """Parses E2K text files and returns a dictionary.
     
     kwargs can be used to pass information into the function
-    At the moment it is only used for the `debug`flag
+    At the moment it is only used for the `debug` flag
     
     Args:
         E2K_model_path (str): this is a string containing the path
@@ -341,11 +339,18 @@ def E2KtoDict(E2K_model_path, **kwargs):
         (dict): a dictionary containing parsed data from the ETABS text file
             This data is compatible with JSON and may be stored in this format.
     """
-    debug = kwargs.get('Debug', False)
+    debug = kwargs.get('Debug', False) or debug
+    
+    if debug:
+        print('\n===== Start parsing E2K text file ==========')
+    
     E2K_dict = dict()
     # the_dict = E2K_dict
+    E2K_dict['ParseLog'] = []
+    ParseLog_list = E2K_dict['ParseLog']
 
     ignore_lines = False
+    # , encoding='utf8'
     with open(E2K_model_path, 'r') as E2K_file:
         for line in E2K_file:
             if line.startswith(r'$ File'):
@@ -359,7 +364,7 @@ def E2KtoDict(E2K_model_path, **kwargs):
                 # Point `the_dict` to the relevant entry in E2K_dict
                 the_dict = E2K_dict[key] 
                 # Identify which parsing function to use
-                the_func = try_branch
+                the_func = lambda x, y: try_branch(x, y, debug=debug, keyword=key)
 
             #elif line.startswith(r'$ POINT COORDINATES'):
             # print(f'Starting to process {line.strip()} *')
@@ -369,20 +374,31 @@ def E2KtoDict(E2K_model_path, **kwargs):
             #    the_dict = E2K_dict[key]
             #    the_func = point_parse
             
+            elif line.startswith(r'$ STORIES - IN SEQUENCE FROM TOP'):
+                if debug:
+                    print(f'Starting to process {line.strip()} *')
+                ignore_lines = False
+                key = 'STORIES - IN SEQUENCE FROM TOP' # line[2:].strip() # removes `$ `
+                E2K_dict[key] = dict()
+                the_dict = E2K_dict[key]
+                the_func = lambda x, y: story_func(x, y, debug=debug)
+            
             elif (line.startswith(r'$ POINT OBJECT LOADS') or 
                     line.startswith(r'$ FRAME OBJECT LOADS') or 
                     line.startswith(r'$ LINE OBJECT LOADS') or 
                     line.startswith(r'$ SHELL OBJECT LOADS') or
                     line.startswith(r'$ AREA OBJECT LOADS')):
-                print(f'Starting to process {line.strip()} *')
+                if debug:
+                    print(f'Starting to process {line.strip()} *')
                 ignore_lines = False
                 key = line[2:].strip() # removes `$ `
                 E2K_dict[key] = dict()
                 the_dict = E2K_dict[key]
-                the_func = load_func
+                the_func = lambda x, y: load_func(x, y, debug=debug)
             
             elif line.startswith(r'$ LOAD COMBINATIONS'):
-                print(f'Starting to process {line.strip()} *')
+                if debug:
+                    print(f'Starting to process {line.strip()} *')
                 ignore_lines = False
                 key = line[2:].strip()
                 E2K_dict[key] = dict()
@@ -391,12 +407,13 @@ def E2KtoDict(E2K_model_path, **kwargs):
             
             # Default parsing set up
             elif line.startswith(r'$'):
-                print(f'Starting to process {line.strip()}')
+                if debug:
+                    print(f'Starting to process {line.strip()}')
                 ignore_lines = False
                 key = line[2:].strip()
                 E2K_dict[key] = dict()
                 the_dict = E2K_dict[key]
-                the_func = try_branch
+                the_func = lambda x, y: try_branch(x, y, debug=debug, keyword=key)
 
             elif line.strip() == '':
                 # Ignore blank lines
@@ -407,17 +424,80 @@ def E2KtoDict(E2K_model_path, **kwargs):
                 if ignore_lines:  # Ignore lines if flag is set to False
                     pass
                 else:            ### This is where all the parsing is done ###
-                    dc = tuple(gather(line_split(line)))
+                    # line_split - breaks lines based on double quotes and spaces
+                    # gather - does a reverse generation of tuples for an E2K line
+                    dc = tuple(gather(line_split(line))) # 
                     the_func(the_dict, dc)  # the active dictionary is modified
     
+    # Review story data for consistency
+    is_consistent, log_text = story_consistency_check(E2K_dict, debug=debug)
+    ParseLog_list.append(log_text)
+
+    if not is_consistent:
+        print(log_text)
+
     if debug:
+        print(f'\n** E2K_dict Summary (E2KtoDict) ****')
         for k,v in E2K_dict.items():
             print(k)
-            if len(v) < 6:
-                [print(f'{len(vv):7d}  : {kk}') for kk, vv in v.items()]
-            else:
-                print(f'{len(v):7d}  : {k}')
+            if isinstance(v, dict):
+                if len(v) < 6:
+                    [print(f'{len(vv):7d}  : {kk}') for kk, vv in v.items()]
+                else:
+                    print(f'{len(v):7d}  : {k}')
+            elif isinstance(v, (list, tuple)):
+                print(v[:6])
+            
+        print('===== Finished parsing E2K file to E2K_dict ==========')
     return E2K_dict
+
+
+def story_consistency_check(E2K_dict, debug=False):
+    """Checks for consistency in story keys. If keys are inconsistent then 
+    calls for story information will fail.
+
+    The stories (storeys) dictionary contains the original data ('STORY') and a derived
+    dictionary to handle the fact that newer models contain 'TOWER' information that
+    is typically added to all story calls in the POINT and member data. 
+    """
+    if debug: print('Consistency check - checking that all story references in points and members are matched in the story dictionary')
+    # Review storey data for consistency
+    len_story_lists = len(E2K_dict['STORIES - IN SEQUENCE FROM TOP'].get('Story_Lists',{}))
+    
+    story_list = E2K_dict['STORIES - IN SEQUENCE FROM TOP'].get('STORY',{}).keys()
+    # Create a list of 'de-towered' story names (return None if there is no hyphen)
+    story_list_1 = [str(s).split('-', 1)[-1] if ('-' in str(s)) else [None] for s in story_list]
+    point_story_set = set()
+    [point_story_set.add(k[1]) for k in E2K_dict['POINT ASSIGNS'].get('POINTASSIGN',{}).keys()]
+    print('story_list = ', list(story_list))
+    print('point_story_set = ', point_story_set)
+    
+    at_least_one = any(s in story_list for s in point_story_set) # Of the points in the model, at least one storey key is in the list of storeys 
+    every_one = all(s in story_list for s in point_story_set) # Of the points in the model, all storey keys are in the list of storeys 
+    at_least_one_1 = any(s in story_list_1 for s in point_story_set) # Of the points in the model, at least one storey key is in the de-towered list of storeys
+    every_one_1 = all(s in story_list_1 for s in point_story_set) # Of the points in the model, all storey keys are in the de-towered list of storeys
+    
+    if every_one:
+        # No keys need replacing
+        result = (True, 'No keys need replacing')
+    elif (not at_least_one) and every_one_1 and (len_story_lists == 1):
+        # All keys need replacing
+        # Split tower name from individual story keys 
+        new_story_dict = {k.split('-', 1)[1]:v for k, v in E2K_dict['STORIES - IN SEQUENCE FROM TOP'].get('STORY',{}).items()}
+        #new_story_lists_dict = {k:[vv.split('-', 1)[1] for vv in v] for k, v in E2K_dict['STORIES - IN SEQUENCE FROM TOP'].get('Story_Lists',{}).items()}
+        # Replace tower key with 'Default' and split tower name from individual story keys 
+        new_story_lists_dict = {'Default':[vv.split('-', 1)[1] for vv in v] for k, v in E2K_dict['STORIES - IN SEQUENCE FROM TOP'].get('Story_Lists',{}).items()}
+        E2K_dict['STORIES - IN SEQUENCE FROM TOP']['STORY'] = new_story_dict
+        E2K_dict['STORIES - IN SEQUENCE FROM TOP']['Story_Lists'] = new_story_lists_dict
+        result = (True, 'All keys have been replaced')
+    elif (not at_least_one) and every_one_1:
+        pass
+    else:
+        # There is a problem...
+        result = (False, 'Inconsistent keys')
+
+    return result
+
 
 
 def E2KtoDict_test(text):
@@ -481,76 +561,127 @@ def E2KtoDict_test(text):
 ## ===  Combined E2K Processes  ===
 ## ================================
 
-def process_E2K_dict(E2K_dict):
+def key_printout(E2K_dict, min_length=6):
+    for k,v in E2K_dict.items():
+        print(k)
+        if isinstance(v, dict):
+            if len(v) < min_length:
+                [print(f'{len(vv):7d}  : {kk}') for kk, vv in v.items()]
+            else:
+                print(f'{len(v):7d}  : {k}')
+        elif isinstance(v, list):
+            print(f'{len(v):7d}  : {k}')
+        else:
+            print(f'{k}  : {v}')
+
+
+def process_E2K_dict(E2K_dict, find_loops=False, debug=False, aggregation=False):
     """Carries out all the post-processing of the parsed E2K file
     Most importantly, this adds quantities in a new dictionary"""
-    FILE_PP(E2K_dict)
-    PROGRAM_PP(E2K_dict)
-    CONTROLS_PP(E2K_dict)
-    STORIES_PP(E2K_dict)
-    MAT_PROPERTIES_PP(E2K_dict)
-    section_def_dict = build_section_dict()
-    FRAME_SECTIONS_PP(E2K_dict, section_def_dict)
-    ENCASED_SECTIONS_PP(E2K_dict)
-    SD_SECTIONS_PP(E2K_dict)
+    if debug: print('\n===== Starting Post-processing ==========')
+    
+    FILE_PP(E2K_dict, debug=debug)
+    if debug: print('___ FILE_PP complete _____________')
+    PROGRAM_PP(E2K_dict, debug=debug)
+    if debug: print('___ PROGRAM_PP complete _____________')
+    CONTROLS_PP(E2K_dict, debug=debug)
+    if debug: print('___ CONTROLS_PP complete _____________')
+    STORIES_PP(E2K_dict, debug=debug)
+    if debug: print('___ STORIES_PP complete _____________')
+    MAT_PROPERTIES_PP(E2K_dict, debug=debug)
+    if debug: print('___ MAT_PROPERTIES_PP complete _____________')
+    section_def_dict = build_section_dict(debug=debug)
+    if debug: print('___ section_def_dict complete _____________')
+    FRAME_SECTIONS_PP(E2K_dict, section_def_dict, debug=debug)
+    if debug: print('___ FRAME_SECTIONS_PP complete _____________')
+    ENCASED_SECTIONS_PP(E2K_dict, debug=debug)
+    if debug: print('___ ENCASED_SECTIONS_PP complete _____________')
+    SD_SECTIONS_PP(E2K_dict, debug=debug)
+    if debug: print('___ SD_SECTIONS_PP complete _____________')
     # NONPRISMATIC_SECTIONS_PP(E2K_dict) # TODO
-    SHELL_PROPERTIES_PP(E2K_dict)
-    POINTS_PP(E2K_dict)
-    POINT_ASSIGNS_PP(E2K_dict)
-    LINE_CONN_PP(E2K_dict)
-    LINE_ASSIGNS_PP(E2K_dict)
-    AREA_CONN_PP(E2K_dict)
-    AREA_ASSIGNS_PP(E2K_dict)
-    LOAD_CASES_PP(E2K_dict) # post processing STATIC LOADS or LOAD PATTERNS
-    #LINE_LOAD_PP(E2K_dict)
-    MEMBER_quantities_summary(E2K_dict)
-    try:
+    SHELL_PROPERTIES_PP(E2K_dict, debug=debug)
+    if debug: print('___ SHELL_PROPERTIES_PP complete _____________')
+    POINTS_PP(E2K_dict, debug=debug)
+    if debug: print('___ POINTS_PP complete _____________')
+    POINT_ASSIGNS_PP(E2K_dict, debug=debug)
+    if debug: print('___ POINT_ASSIGNS_PP complete _____________')
+    LINE_CONN_PP(E2K_dict, debug=debug)
+    if debug: print('___ LINE_CONN_PP complete _____________')
+    LINE_ASSIGNS_PP(E2K_dict, debug=debug)
+    if debug: print('___ LINE_ASSIGNS_PP complete _____________')
+    AREA_CONN_PP(E2K_dict, debug=debug)
+    if debug: print('___ AREA_CONN_PP complete _____________')
+    AREA_ASSIGNS_PP(E2K_dict, debug=debug)
+    if debug: print('___ AREA_ASSIGNS_PP complete _____________')
+    LOAD_CASES_PP(E2K_dict, debug=debug) # post processing STATIC LOADS or LOAD PATTERNS
+    if debug: print('___ LOAD_CASES_PP complete _____________')
+    #LINE_LOAD_PP(E2K_dict, debug=debug) # not needed
+    if aggregation is True:
+        if debug: print('*** Quantities aggregation') 
+        MEMBER_quantities_summary(E2K_dict, debug=debug)
+        if debug: print('___ MEMBER_quantities_summary complete _____________')
+    else:
+        if debug: print('*** No quantities aggregation') 
+        
+    story_geometry(E2K_dict, find_loops=find_loops, debug=debug)
+    if debug: print('___ story_geometry complete _____________')
+    """try:
         story_geometry(E2K_dict)
     except:
-        print('"story_geometry" failed')
-    # LOADS   # TODO
-    # GROUPS  # TODO
-    print('Post-processing finished')
+        print('"story_geometry" failed')"""
+    # LOAD COMBINATIONS   # TODO
+    # ANALYSIS TASKS  # TODO
+    if debug: print('\n===== Post-processing finished ==========\n')
     
 
-def run_all(E2K_model_path, get_pickle=False, **kwargs):
+def run_all(E2K_model_path, get_pickle=False, save_pickle=True, find_loops=False, debug=False, **kwargs):
     """Runs all functions for parsing and post-processing an ETABS text file
     It returns a dictionary that is in the format of the text file.
     Since processing can be time-consuming, it pickles the output 
     and will preferentially unpickle if 'get_pickle' is True"""
-    debug = kwargs.get('Debug', False)
+    debug = kwargs.get('Debug', False) or debug
+    
     
     pickle_path = splitext(E2K_model_path)[0] + '.pkl'
-    pickle_path_2 = splitext(E2K_model_path)[0] + '_2.pkl'
-    
     if exists(pickle_path) and get_pickle == True:
+        if debug:
+            print('** Extracting E2K_dict from pickle file ***')
         E2K_dict = pickle.load(open(pickle_path, 'rb'))
     else:
-        E2K_dict = E2KtoDict(E2K_model_path, **kwargs)
-        pickle.dump(E2K_dict, open(pickle_path, 'wb'))
+        if debug: print('** Parsing E2K file... ***')
+        E2K_dict = E2KtoDict(E2K_model_path, debug=debug, **kwargs)
+        if save_pickle:
+            if debug: print('\n** Pickling E2K_dict **')
+            pickle.dump(E2K_dict, open(pickle_path, 'wb'))
+            if debug: print('-- First pickle file ' + ('exists\n' if exists(pickle_path) else 'does NOT exist\n'))
+
     
-    process_E2K_dict(E2K_dict)
+    if debug: print(f'** `run_all` transitioning to `process_E2K_dict`, debug = {debug}')
+    process_E2K_dict(E2K_dict, find_loops=find_loops, debug=debug)
     
-    try:
+    if save_pickle:
+        pickle_path_2 = splitext(E2K_model_path)[0] + '_2.pkl'
+
+        if debug: print(f'\nE2K_dict is a {type(E2K_dict)}')
+        if debug: key_printout(E2K_dict)
         pickle.dump(E2K_dict, open(pickle_path_2, 'wb'))
-    except:
-        print('second pickle dump failed')
+        print('second pickle dump succeeded')
+        
+        """try:
+            pickle.dump(E2K_dict, open(pickle_path_2, 'wb'))
+            print('\n** Second pickle dump succeeded')
+        except:
+            print('\n** Second pickle dump failed')"""
+    
+    print('-- Second pickle file ' + ('exists\n' if exists(pickle_path_2) else 'does NOT exist\n'))
 
     if debug:
-        for k,v in E2K_dict.items():
-            print(k)
-            if isinstance(v, dict):
-                if len(v) < 6:
-                    [print(f'{len(vv):7d}  : {kk}') for kk, vv in v.items()]
-                else:
-                    print(f'{len(v):7d}  : {k}')
-            elif isinstance(v, list):
-                print(f'{len(v):7d}  : {k}')
-            else:
-                print(f'{k}  : {v}')
+        print(f'\n** E2K_dict Final Summary (run_all) ****')
+        # key_printout(E2K_dict)
 
     return E2K_dict
-    
+
+
 
 def main():
     """directory_listing = listdir(f'..\samples')
@@ -568,6 +699,7 @@ def main():
     print(f'\n=== Use these lines to import the model data: ===')
     print(f'import pickle')
     print(f'E2K_dict = pickle.load(open({pkl2_file}, "rb")') """
+    pass
 
 if __name__ == "__main__":
     main()

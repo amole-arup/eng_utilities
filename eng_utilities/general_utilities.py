@@ -1,6 +1,7 @@
 """"""
 
 from collections import namedtuple
+from math import log10, ceil, floor
 
 
 def is_numeric(numstring):
@@ -75,7 +76,7 @@ units_tuple = ('m', 'cm', 'mm', 'in', 'ft', 'yd',
     'C', 'K', 'F', 'R', 'g', 'kg', 'ton', 'tonne', 'tonf', )
 
 
-units_conv_dict = {
+units_conv_base_dict = {
     ('cm', 'm'): 0.01, ('mm', 'm'): 0.001, ('cm', 'mm'): 10.0, 
     ('in', 'm'): 0.0254, ('in', 'cm'): 2.54, ('in', 'mm'): 25.4, 
     ('ft', 'm'): 0.3048, ('ft', 'cm'): 30.48, ('ft', 'mm'): 304.8, ('ft', 'in'): 12.0, 
@@ -87,21 +88,28 @@ units_conv_dict = {
     ('lbf', 'GN'): 4.4482216e-09, ('lbf', 'MN'): 4.4482216e-06, ('lbf', 'kN'): 4.4482216e-03, ('lbf', 'N'): 4.4482216, 
     ('kip', 'MN'): 0.0044482216, ('kip', 'kN'): 4.4482216, ('kip', 'N'): 4448.2216, 
     ('kipf', 'MN'): 0.0044482216, ('kipf', 'kN'): 4.4482216, ('kipf', 'N'): 4448.2216, 
+    ('lb', 'mt'): 0.45359237e-06, ('lb', 't'): 0.45359237e-03, ('lb', 'kg'): 0.45359237, 
+    ('lbm', 'mt'): 0.45359237e-06, ('lbm', 't'): 0.45359237e-03, ('lbm', 'kg'): 0.45359237, 
+    ('kip', 'mt'): 0.00045359237, ('kip', 't'): 0.45359237, ('kip', 'kg'): 453.59237, 
+    ('kipm', 'mt'): 0.00045359237, ('kipm', 't'): 0.45359237, ('kipm', 'kg'): 453.59237, 
     ('kg', 'mt'): 1e-06, ('kg', 't'): 0.001, ('t', 'mt'): 0.001, ('mt', 'mt'): 1.0,  
 }
 
 # add reverse lookup
-units_conv_dict.update({(k[1], k[0]): 1.0 / v for k, v in units_conv_dict.items()})
+units_conv_base_dict.update({(k[1], k[0]): 1.0 / v for k, v in units_conv_base_dict.items()})
 
 # add units self lookup
-units_conv_dict.update({(k[0], k[0]): 1.0 for k, _ in units_conv_dict.items()})
+units_conv_base_dict.update({(k[0], k[0]): 1.0 for k, _ in units_conv_base_dict.items()})
+
+units_conv_dict = {**units_conv_base_dict}
 
 # Dictionary to return Standard Unit Definitions
 # -- 
 units_lookup_dict = {u.casefold():u for u in units_tuple}
 
 def units_conversion_factor(from_to):
-    """from_to is a tuple containing the starting unit and the target unit"""
+    """from_to is a tuple containing the starting unit and the target unit
+    """
     try:
         from_unit, to_unit = [units_lookup_dict.get(u.casefold()) for u in from_to]
     except:
@@ -140,3 +148,9 @@ def ci_lookup(the_key, the_dict, default=None):
         return the_dict.get(key_dict[the_key.casefold()])
     else:
         return default
+
+
+def rounder(n, e):
+    """returns a number `n` rounded to match the magnitude of `e`"""
+    return round(n, -int(floor(log10(e))))
+
