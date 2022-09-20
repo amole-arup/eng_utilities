@@ -264,13 +264,17 @@ def story_func(the_dict, line, debug=False):
     this needs to be carried over from any previous lines (it
     is only defined once for each line and that then applies to 
     all following ones)
-    NB `current_tower` needs to be defined in the current namespace"""
+    NB `current_tower` needs to be defined in the current namespace
+    NB2: It seems that in some versions of ETABS, if only one 
+        Tower is defined the Tower prefix is not used...
+    """
     # Keep a list of stories
     if not the_dict.get('Story_Lists'):
         the_dict['Story_Lists'] = dict()
     
     line_key = line[0][0] # 'STORY'
-    story_basic_name = str(line[0][1])
+    # Choosing to use string numbers as numbers
+    story_basic_name = line[0][1] # str(line[0][1])
     story_type = line[1][0] # e.g. 'HEIGHT', 'ELEV'
     line_dict = dict(line)  # NB STORY is retained as a key-value pair
     if line_dict.get('TOWER') is None and the_dict.get('TOWERS') is None:
@@ -342,6 +346,8 @@ def E2KtoDict(E2K_model_path, debug=False, **kwargs):
     
     E2K_dict = dict()
     # the_dict = E2K_dict
+    E2K_dict['ParseLog'] = []
+    ParseLog_list = E2K_dict['ParseLog']
 
     ignore_lines = False
     # , encoding='utf8'
@@ -423,16 +429,75 @@ def E2KtoDict(E2K_model_path, debug=False, **kwargs):
                     dc = tuple(gather(line_split(line))) # 
                     the_func(the_dict, dc)  # the active dictionary is modified
     
+    # Review story data for consistency
+    is_consistent, log_text = story_consistency_check(E2K_dict, debug=debug)
+    ParseLog_list.append(log_text)
+
+    if not is_consistent:
+        print(log_text)
+
     if debug:
         print(f'\n** E2K_dict Summary (E2KtoDict) ****')
         for k,v in E2K_dict.items():
             print(k)
-            if len(v) < 6:
-                [print(f'{len(vv):7d}  : {kk}') for kk, vv in v.items()]
-            else:
-                print(f'{len(v):7d}  : {k}')
+            if isinstance(v, dict):
+                if len(v) < 6:
+                    [print(f'{len(vv):7d}  : {kk}') for kk, vv in v.items()]
+                else:
+                    print(f'{len(v):7d}  : {k}')
+            elif isinstance(v, (list, tuple)):
+                print(v[:6])
+            
         print('===== Finished parsing E2K file to E2K_dict ==========')
     return E2K_dict
+
+
+def story_consistency_check(E2K_dict, debug=False):
+    """Checks for consistency in story keys. If keys are inconsistent then 
+    calls for story information will fail.
+
+    The stories (storeys) dictionary contains the original data ('STORY') and a derived
+    dictionary to handle the fact that newer models contain 'TOWER' information that
+    is typically added to all story calls in the POINT and member data. 
+    """
+    if debug: print('Consistency check - checking that all story references in points and members are matched in the story dictionary')
+    # Review storey data for consistency
+    len_story_lists = len(E2K_dict['STORIES - IN SEQUENCE FROM TOP'].get('Story_Lists',{}))
+    
+    story_list = E2K_dict['STORIES - IN SEQUENCE FROM TOP'].get('STORY',{}).keys()
+    # Create a list of 'de-towered' story names (return None if there is no hyphen)
+    story_list_1 = [str(s).split('-', 1)[-1] if ('-' in str(s)) else [None] for s in story_list]
+    point_story_set = set()
+    [point_story_set.add(k[1]) for k in E2K_dict['POINT ASSIGNS'].get('POINTASSIGN',{}).keys()]
+    print('story_list = ', list(story_list))
+    print('point_story_set = ', point_story_set)
+    
+    at_least_one = any(s in story_list for s in point_story_set) # Of the points in the model, at least one storey key is in the list of storeys 
+    every_one = all(s in story_list for s in point_story_set) # Of the points in the model, all storey keys are in the list of storeys 
+    at_least_one_1 = any(s in story_list_1 for s in point_story_set) # Of the points in the model, at least one storey key is in the de-towered list of storeys
+    every_one_1 = all(s in story_list_1 for s in point_story_set) # Of the points in the model, all storey keys are in the de-towered list of storeys
+    
+    if every_one:
+        # No keys need replacing
+        result = (True, 'No keys need replacing')
+    elif (not at_least_one) and every_one_1 and (len_story_lists == 1):
+        # All keys need replacing
+        # Split tower name from individual story keys 
+        new_story_dict = {k.split('-', 1)[1]:v for k, v in E2K_dict['STORIES - IN SEQUENCE FROM TOP'].get('STORY',{}).items()}
+        #new_story_lists_dict = {k:[vv.split('-', 1)[1] for vv in v] for k, v in E2K_dict['STORIES - IN SEQUENCE FROM TOP'].get('Story_Lists',{}).items()}
+        # Replace tower key with 'Default' and split tower name from individual story keys 
+        new_story_lists_dict = {'Default':[vv.split('-', 1)[1] for vv in v] for k, v in E2K_dict['STORIES - IN SEQUENCE FROM TOP'].get('Story_Lists',{}).items()}
+        E2K_dict['STORIES - IN SEQUENCE FROM TOP']['STORY'] = new_story_dict
+        E2K_dict['STORIES - IN SEQUENCE FROM TOP']['Story_Lists'] = new_story_lists_dict
+        result = (True, 'All keys have been replaced')
+    elif (not at_least_one) and every_one_1:
+        pass
+    else:
+        # There is a problem...
+        result = (False, 'Inconsistent keys')
+
+    return result
+
 
 
 def E2KtoDict_test(text):
@@ -496,11 +561,11 @@ def E2KtoDict_test(text):
 ## ===  Combined E2K Processes  ===
 ## ================================
 
-def key_printout(E2K_dict):
+def key_printout(E2K_dict, min_length=6):
     for k,v in E2K_dict.items():
         print(k)
         if isinstance(v, dict):
-            if len(v) < 6:
+            if len(v) < min_length:
                 [print(f'{len(vv):7d}  : {kk}') for kk, vv in v.items()]
             else:
                 print(f'{len(v):7d}  : {k}')
@@ -510,38 +575,62 @@ def key_printout(E2K_dict):
             print(f'{k}  : {v}')
 
 
-def process_E2K_dict(E2K_dict, find_loops=False, debug=False):
+def process_E2K_dict(E2K_dict, find_loops=False, debug=False, aggregation=False):
     """Carries out all the post-processing of the parsed E2K file
     Most importantly, this adds quantities in a new dictionary"""
     if debug: print('\n===== Starting Post-processing ==========')
     
     FILE_PP(E2K_dict, debug=debug)
+    if debug: print('___ FILE_PP complete _____________')
     PROGRAM_PP(E2K_dict, debug=debug)
+    if debug: print('___ PROGRAM_PP complete _____________')
     CONTROLS_PP(E2K_dict, debug=debug)
+    if debug: print('___ CONTROLS_PP complete _____________')
     STORIES_PP(E2K_dict, debug=debug)
+    if debug: print('___ STORIES_PP complete _____________')
     MAT_PROPERTIES_PP(E2K_dict, debug=debug)
+    if debug: print('___ MAT_PROPERTIES_PP complete _____________')
     section_def_dict = build_section_dict(debug=debug)
+    if debug: print('___ section_def_dict complete _____________')
     FRAME_SECTIONS_PP(E2K_dict, section_def_dict, debug=debug)
+    if debug: print('___ FRAME_SECTIONS_PP complete _____________')
     ENCASED_SECTIONS_PP(E2K_dict, debug=debug)
+    if debug: print('___ ENCASED_SECTIONS_PP complete _____________')
     SD_SECTIONS_PP(E2K_dict, debug=debug)
+    if debug: print('___ SD_SECTIONS_PP complete _____________')
     # NONPRISMATIC_SECTIONS_PP(E2K_dict) # TODO
     SHELL_PROPERTIES_PP(E2K_dict, debug=debug)
+    if debug: print('___ SHELL_PROPERTIES_PP complete _____________')
     POINTS_PP(E2K_dict, debug=debug)
+    if debug: print('___ POINTS_PP complete _____________')
     POINT_ASSIGNS_PP(E2K_dict, debug=debug)
+    if debug: print('___ POINT_ASSIGNS_PP complete _____________')
     LINE_CONN_PP(E2K_dict, debug=debug)
+    if debug: print('___ LINE_CONN_PP complete _____________')
     LINE_ASSIGNS_PP(E2K_dict, debug=debug)
+    if debug: print('___ LINE_ASSIGNS_PP complete _____________')
     AREA_CONN_PP(E2K_dict, debug=debug)
+    if debug: print('___ AREA_CONN_PP complete _____________')
     AREA_ASSIGNS_PP(E2K_dict, debug=debug)
+    if debug: print('___ AREA_ASSIGNS_PP complete _____________')
     LOAD_CASES_PP(E2K_dict, debug=debug) # post processing STATIC LOADS or LOAD PATTERNS
-    #LINE_LOAD_PP(E2K_dict, debug=debug)
-    MEMBER_quantities_summary(E2K_dict, debug=debug)
+    if debug: print('___ LOAD_CASES_PP complete _____________')
+    #LINE_LOAD_PP(E2K_dict, debug=debug) # not needed
+    if aggregation is True:
+        if debug: print('*** Quantities aggregation') 
+        MEMBER_quantities_summary(E2K_dict, debug=debug)
+        if debug: print('___ MEMBER_quantities_summary complete _____________')
+    else:
+        if debug: print('*** No quantities aggregation') 
+        
     story_geometry(E2K_dict, find_loops=find_loops, debug=debug)
+    if debug: print('___ story_geometry complete _____________')
     """try:
         story_geometry(E2K_dict)
     except:
         print('"story_geometry" failed')"""
-    # LOADS   # TODO
-    # GROUPS  # TODO
+    # LOAD COMBINATIONS   # TODO
+    # ANALYSIS TASKS  # TODO
     if debug: print('\n===== Post-processing finished ==========\n')
     
 
@@ -591,7 +680,8 @@ def run_all(E2K_model_path, get_pickle=False, save_pickle=True, find_loops=False
         # key_printout(E2K_dict)
 
     return E2K_dict
-    
+
+
 
 def main():
     """directory_listing = listdir(f'..\samples')
@@ -609,6 +699,7 @@ def main():
     print(f'\n=== Use these lines to import the model data: ===')
     print(f'import pickle')
     print(f'E2K_dict = pickle.load(open({pkl2_file}, "rb")') """
+    pass
 
 if __name__ == "__main__":
     main()
