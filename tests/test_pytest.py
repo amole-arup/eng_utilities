@@ -1,7 +1,22 @@
+import os
+import sys
+#sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+#sys.path.append(os.path.abspath(r'..\eng_utilities'))
+#sys.path.append(r'..\eng_utilities')
+sys.path.insert(0, r'..\eng_utilities')
+
+print('\n=== Paths ===')
+[print(sp) for sp in sys.path]
+print()
+
+# from .context import eng_utilities
 import eng_utilities
 import pytest
 
 #def test_E2K
+#print('Name   : ', __name__)
+#print('Package: ', __package__)
+
 
 def test_always_passes():
     assert True
