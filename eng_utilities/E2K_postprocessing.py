@@ -25,11 +25,14 @@ Shell_Agg_Props = namedtuple('Shell_Agg_Props', 'material mat_type wt_density th
 Agg_Props = namedtuple('Agg_Props', 'material mat_type wt_density length area volume weight')
 
 
-def rel_story(story_name, Story_List_dict, n_down, tag='', debug=False):
+def rel_story_alt(story_name, Story_List_dict, n_down, tag='', debug=False):
     """Returns the story relative to the story provided
 
+    NB There are problems with multi-tower models since n_down often
+    does not seem to correspond to any real drop
+
     Args:
-        story_name (str): this is the story name as used (i.e. including 
+        story_name (str, int): this is the story name as used (i.e. including 
             the tower name if present - typically joined with a hyphen, 
             e.g. 'TowerOne-L22')
         Story_List_dict - the 'Story_Lists' dictionary in the E2K_dict, 
@@ -38,9 +41,69 @@ def rel_story(story_name, Story_List_dict, n_down, tag='', debug=False):
         n_down (int): the number of stories to descend. It automatically cuts off
             above and below (will not go up above roof or down below base)
     """
-    story_name_split = story_name.split('-', 1)
+    # If story_name contains the name of a tower, then the following will be
+    #   a double-length list comprising the Tower and the Story name 
+    split_story_name = story_name.split('-', 1) if isinstance(story_name, str) else [story_name]
+    
+    # Check where story name is in Story Lists
+    
+    #   Check against 'Default' Story_List
+    if 'Default' in Story_List_dict.keys():
+        story_list = list(Story_List_dict.get('Default', []))
+        if story_name in story_list:
+            story_index = story_list.index(story_name)
+        else:
+            if len(split_story_name) == 2 and split_story_name[-1] in story_list:
+                story_index = story_list.index(story_name)
+            else:
+                story_index = None
+    elif len(split_story_name) > 1:
+        story_list = list(Story_List_dict.get(split_story_name[0], []))
+        story_index = story_list.index(story_name)
+    else:
+        towers = [k for k, v in Story_List_dict.items() if story_name in v]
+        
+        if len(towers) == 1:  # If there is only one match
+            story_list = list(Story_List_dict.get(towers[0], []))
+            story_index = story_list.index(story_name)
+        else:
+            story_index = None
+            story_list = []
+
+    # if characters before the hyphen correspond to a "tower" 
+    #     this will return a list of storeys
+    # if the story is numeric, or anything other than a string, 
+    #     it will be returned as one item in a list
+    
+    if debug and story_index is None:
+        err_tag = f' [{tag}]' if tag else ''
+        print(f'%% Story Lookup Error - going down {n_down} from {story_name} (storey_index is None)' + err_tag)
+        print(f'story_list is: {story_list}')
+        print()
+    
+    return story_list[max(0, min(story_index + n_down, len(story_list) - 1))]
+
+
+def rel_story(story_name, Story_List_dict, n_down, tag='', debug=False):
+    """Returns the story relative to the story provided
+
+    NB There are problems with multi-tower models since n_down often
+    does not seem to correspond to any real drop
+
+    Args:
+        story_name (str, int): this is the story name as used (i.e. including 
+            the tower name if present - typically joined with a hyphen, 
+            e.g. 'TowerOne-L22')
+        Story_List_dict - the 'Story_Lists' dictionary in the E2K_dict, 
+            e.g. Story_List_dict = E2K_dict['STORIES - IN SEQUENCE FROM TOP']['Story_Lists']
+            Note that for buildings without 'Towers' there is a 'Default' tower.
+        n_down (int): the number of stories to descend. It automatically cuts off
+            above and below (will not go up above roof or down below base)
+    
+    """
     # if characters before the hyphen correspond to a "tower" 
     # this will return a list of storeys
+    story_name_split = story_name.split('-', 1) if isinstance(story_name, str) else [story_name]
     story_list = Story_List_dict.get(story_name_split[0], [])
     
     if (len(story_name_split) == 0) or len(story_list) == 0:
@@ -54,6 +117,7 @@ def rel_story(story_name, Story_List_dict, n_down, tag='', debug=False):
         print()
     
     return story_list[max(0,min(story_index + n_down, len(story_list) - 1))]
+
 
 
 def enhance_frame_properties(f_name, f_dict, E2K_dict, 
@@ -151,10 +215,14 @@ def enhance_SD_properties(f_dict, sd_dict):
 
 def enhance_CALC_properties(f_name, f_dict, m_dict, 
                         model_units=Units('N', 'm', 'C')):
-    """"""
+    """
+    
+    """
     shape = f_dict.get('SHAPE')
     
-    if shape in ('Steel I/Wide Flange', 'I/Wide Flange', 'WIDE FLANGE'): 
+    if shape in ('General', 'GENERAL', 'general'): 
+        props = General_props_func(f_dict)
+    elif shape in ('Steel I/Wide Flange', 'I/Wide Flange', 'WIDE FLANGE'): 
         props = I_props_func(f_dict)
     elif shape in ('Steel Pipe', 'Concrete Pipe', 'Pipe', 'PIPE'): 
         props = CHS_props_func(f_dict)
@@ -800,6 +868,10 @@ def POINT_ASSIGNS_PP(E2K_dict, debug=False):
             else:
                 x, y = coords
                 dz = 0
+            #if STORY_dict[story].get('ABS_ELEV') is None:
+            #    if debug: print(f'Story: {story}\n', STORY_dict)
+            #if STORY_dict[story].get('ABS_ELEV') is None:
+            #    if debug: print(f'Story: {story}\n', STORY_dict)
             abselev = STORY_dict[story]['ABS_ELEV']
             #abselev = POINTS_dict.get(point, None)
             
