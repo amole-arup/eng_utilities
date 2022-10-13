@@ -973,9 +973,10 @@ def LINE_ASSIGNS_PP(E2K_dict, debug=False):
     
     # Get reference to sections 
     FRAME_PROP_dict = E2K_dict.get('FRAME SECTIONS', {}).get('FRAMESECTION', {})
-    print('\nFRAME_PROP_dict: ')
-    [print(f'*** {k}: {v}') for k, v in FRAME_PROP_dict.items()]
-    print()
+    if debug: 
+        print('\nFRAME_PROP_dict: ')
+        [print(f'*** {k}: {v}') for k, v in FRAME_PROP_dict.items()]
+        print()
     
     # Check LINES_dict that is to be referenced
     LINES_dict = E2K_dict.get('LINE CONNECTIVITIES', {}).get('LINE', {})
@@ -990,7 +991,7 @@ def LINE_ASSIGNS_PP(E2K_dict, debug=False):
             # If it has, we don't want this messing with the IDs
             if mem_dict.get('ID') is not None:
                 break
-            if i<3 or isinstance(mem_dict.get('SECTION'), list) and debug: 
+            if (i<3 or isinstance(mem_dict.get('SECTION'), list)) and debug: 
                 print(f'i: {i} | key: {key}')
                 print(mem_dict)
             line, story = key  # e.g. (B21, L32)
@@ -1796,6 +1797,8 @@ def MEMBER_quantities_summary(E2K_dict, descending = True, debug=False):
     """
     MEMBERS_dict = E2K_dict.get('LINE ASSIGNS', {}).get('LINEASSIGN', {})
     SHELLS_dict = E2K_dict.get('AREA ASSIGNS', {}).get('AREAASSIGN', {})
+    if debug: print(f'{len(MEMBERS_dict):10,d}: 1D members \n{len(SHELLS_dict):10,d}: 2D shells')
+
     for name, M_dict in (('MEMBERS SUMMARY', MEMBERS_dict), ('SHELLS SUMMARY', SHELLS_dict)):
         sum_dict = quantities_summary(M_dict)
         STORY_dict = E2K_dict.get('STORIES - IN SEQUENCE FROM TOP', {}).get('STORY', {})
@@ -1805,9 +1808,12 @@ def MEMBER_quantities_summary(E2K_dict, descending = True, debug=False):
             story_order = list(STORY_dict.keys())[::-1]
         
         sum_dict_keys = sum_dict.keys()
+        #
         story_ordered = [[k for k in sum_dict_keys if k[0] == s_key] for s_key in story_order]
+        # 
         [one_list.sort(key = itemgetter(1, 2, 3)) for one_list in story_ordered]
         E2K_dict[name] = {k:sum_dict.get(k) for k in sum(story_ordered,[])}
+        if debug: print(f'{len(E2K_dict[name]):10,d}: {name}')
         
         #d2list = []
         #[[d2list.append(k) for k in sum_dict.keys() if k[0] == k1] for k1 in story_order]
@@ -1817,12 +1823,40 @@ def MEMBER_quantities_summary(E2K_dict, descending = True, debug=False):
         #    E2K_dict[name] = {k:sum_dict.get(k) for k in d2list[::-1]}
 
 
+def STORY_quantities_summary(E2K_dict, dtype='Story', debug=False):
+    """Extracts the materials quantities and places them into 
+    dictionaries inside the main dictionary with keys: 
+        (story, member type, material type, material name)    
+    """
+    data_types = ['Story', 'Eltype', 'Mattype', 'Mat']
+    dnum = data_types.index(dtype)
+    # ('15F', 'FLOOR', 'concrete', 'RC280'): {'length': 0.9, 'area': 210.8, 'volume': 37.944, 'weight': 91.17}
+    # ('13F', 'BEAM', 'concrete', 'RC280'): {'length': 172.02, 'area': 5.22, 'volume': 39.6, 'weight': 95.38}
+    # TODO calculate summaries in the Notebook...
+    MEMBERS_qdict = E2K_dict.get('MEMBERS SUMMARY', {})
+    SHELLS_qdict = E2K_dict.get('SHELLS SUMMARY', {})
+    sum_dict = {}
+    for k, v in MEMBERS_qdict.items():
+        value = sum_dict.get(k[dnum],0)
+        new_value = value + v.get('weight',0)
+        sum_dict[k[dnum]] = new_value
+        pass
+    E2K_dict['STORY_WT_SUMMARY'] = sum_dict
+
+
 def MODEL_quantities_summary(E2K_dict, descending = True, debug=False):
     """Extracts the materials quantities and places them into 
     dictionaries inside the main dictionary with keys: 
         (story, member type, material type, material name)    
     """
+    # ('15F', 'FLOOR', 'concrete', 'RC280'): {'length': 0.9, 'area': 210.8, 'volume': 37.944, 'weight': 91.17}
+    # ('13F', 'BEAM', 'concrete', 'RC280'): {'length': 172.02, 'area': 5.22, 'volume': 39.6, 'weight': 95.38}
     # TODO calculate summaries in the Notebook...
     MEMBERS_qdict = E2K_dict.get('MEMBERS SUMMARY', {})
     SHELLS_qdict = E2K_dict.get('SHELLS SUMMARY', {})
+    """sum_dict = {}
+    for k, v in MEMBERS_qdict.items():
+        
+        pass"""
+    pass
 
