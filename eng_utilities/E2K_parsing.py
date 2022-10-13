@@ -343,6 +343,7 @@ def E2KtoDict(E2K_model_path, debug=False, **kwargs):
     
     if debug:
         print('\n===== Start parsing E2K text file ==========')
+        print(E2K_model_path, '\n')
     
     E2K_dict = dict()
     # the_dict = E2K_dict
@@ -469,8 +470,9 @@ def story_consistency_check(E2K_dict, debug=False):
     story_list_1 = [str(s).split('-', 1)[-1] if ('-' in str(s)) else [None] for s in story_list]
     point_story_set = set()
     [point_story_set.add(k[1]) for k in E2K_dict['POINT ASSIGNS'].get('POINTASSIGN',{}).keys()]
-    print('story_list = ', list(story_list))
-    print('point_story_set = ', point_story_set)
+    if debug:
+        print('story_list = ', list(story_list))
+        print('point_story_set = ', point_story_set)
     
     at_least_one = any(s in story_list for s in point_story_set) # Of the points in the model, at least one storey key is in the list of storeys 
     every_one = all(s in story_list for s in point_story_set) # Of the points in the model, all storey keys are in the list of storeys 
@@ -620,6 +622,8 @@ def process_E2K_dict(E2K_dict, find_loops=False, debug=False, aggregation=False)
         if debug: print('*** Quantities aggregation') 
         MEMBER_quantities_summary(E2K_dict, debug=debug)
         if debug: print('___ MEMBER_quantities_summary complete _____________')
+        STORY_quantities_summary(E2K_dict, 'Story', debug=debug)
+        if debug: print('___ STORY_quantities_summary complete _____________')
     else:
         if debug: print('*** No quantities aggregation') 
         
@@ -634,13 +638,13 @@ def process_E2K_dict(E2K_dict, find_loops=False, debug=False, aggregation=False)
     if debug: print('\n===== Post-processing finished ==========\n')
     
 
-def run_all(E2K_model_path, get_pickle=False, save_pickle=True, find_loops=False, debug=False, **kwargs):
+def run_all(E2K_model_path, get_pickle=False, save_pickle=True, find_loops=False, debug=False, aggregation=False, **kwargs):
     """Runs all functions for parsing and post-processing an ETABS text file
     It returns a dictionary that is in the format of the text file.
     Since processing can be time-consuming, it pickles the output 
     and will preferentially unpickle if 'get_pickle' is True"""
+
     debug = kwargs.get('Debug', False) or debug
-    
     
     pickle_path = splitext(E2K_model_path)[0] + '.pkl'
     if exists(pickle_path) and get_pickle == True:
@@ -653,11 +657,12 @@ def run_all(E2K_model_path, get_pickle=False, save_pickle=True, find_loops=False
         if save_pickle:
             if debug: print('\n** Pickling E2K_dict **')
             pickle.dump(E2K_dict, open(pickle_path, 'wb'))
-            if debug: print('-- First pickle file ' + ('exists\n' if exists(pickle_path) else 'does NOT exist\n'))
+            if debug: print('-- First pickle file ' + 
+                (f'exists\n{pickle_path}\n' if exists(pickle_path) else f'does NOT exist\n{pickle_path}\n'))
 
     
     if debug: print(f'** `run_all` transitioning to `process_E2K_dict`, debug = {debug}')
-    process_E2K_dict(E2K_dict, find_loops=find_loops, debug=debug)
+    process_E2K_dict(E2K_dict, find_loops=find_loops, debug=debug, aggregation=aggregation)
     
     if save_pickle:
         pickle_path_2 = splitext(E2K_model_path)[0] + '_2.pkl'
@@ -673,7 +678,8 @@ def run_all(E2K_model_path, get_pickle=False, save_pickle=True, find_loops=False
         except:
             print('\n** Second pickle dump failed')"""
     
-    print('-- Second pickle file ' + ('exists\n' if exists(pickle_path_2) else 'does NOT exist\n'))
+        print('-- Second pickle file ' + 
+            (f'exists\n{pickle_path_2}\n' if exists(pickle_path_2) else f'does NOT exist\n{pickle_path_2}\n'))
 
     if debug:
         print(f'\n** E2K_dict Final Summary (run_all) ****')
