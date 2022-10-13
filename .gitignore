@@ -134,3 +134,4 @@ dmypy.json
 .fake
 .ionide
 notebooks/section_dict.pkl
+samples/StructuralModels/*.gwa
