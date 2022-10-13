@@ -63,7 +63,9 @@ def file_list_maker(files_or_dirs, patterns, recursive=False):
 
 
 def run_list(e2k_list):
-
+    
+    log_dict = {}
+    
     for eek in e2k_list[:]:  #  
         file_root, file_ext = splitext(eek)
         file_base = basename(file_root)
@@ -111,8 +113,12 @@ def run_list(e2k_list):
 
 
 def tabular_print(data_dict, row_key, col_keys):
+    divider = '===='
     res = ''.join([f'{k:6s}' for k in col_keys])
     headers = f'{row_key:40s}' + res
+    print(headers)
+    res = ''.join([f'{divider:6s}' for k in col_keys])
+    headers = f'{divider:40s}' + res
     print(headers)
 
     for file, d in data_dict.items():
@@ -132,56 +138,71 @@ def test_summary(data_dict, col_keys):
     
 
 
+def test_samples(dir_path, print_summary=False, fake_run=False):
+    """"""
+    
+    log_dict = {}
+    # Set to True to test function
+    # Set to False to run conversion checks on real files
+    #fake_run = True
+
+    if fake_run:
+        if print_summary:
+            print('\n** Fake data in use **')
+        log_dict = {
+            'Model 1': {'E2K': True, 'GWA': True, 'PKL': True, 'PKL2': True, 'Complete': True}, 
+            'Model 3B': {'E2K': True, 'GWA': True, 'PKL': True, 'PKL2': True, 'Complete': False}, 
+            'Model with an extremely long name that would mess up the formatting': {'E2K': True, 'GWA': True, 'PKL': True, 'PKL2': True, 'Complete': True}, 
+            'Test model 04': {'E2K': True, 'GWA': False, 'PKL': True, 'PKL2': True, 'Complete': True}, 
+            'Name with chinese characters 中文': {'E2K': True, 'GWA': False, 'PKL': True, 'PKL2': False, 'Complete': False},
+            'Very long 中文 model name with chinese characters': {'E2K': True, 'GWA': False, 'PKL': True, 'PKL2': False, 'Complete': False},
+            }
+        e2k_list = []
+
+    else:
+        # Generation of list of model files in the specified directory
+        e2k_list = file_list_maker(dir_path, (r'*.[eE]2[kK]', r'*.$[eE][tT]'), recursive=True)
+        
+        if print_summary:
+            print(f'\nRunning analyses from \n\t{dir_path}')
+        
+        directory_listing = listdir(dir_path)
+        e2k_list = [join(dir_path, fl) for fl in directory_listing if (fl.casefold().endswith('e2k') or fl.casefold().endswith('$et'))]
+        
+        if print_summary:
+            print('____________________________\n')
+            print('List length', len(e2k_list))
+            [print(e2k) for e2k in e2k_list] # Read in the E2K text file
+
+        # Run all analyses in the list
+        log_dict = run_list(e2k_list)
+
+    summary = test_summary(log_dict, ('E2K', 'GWA', 'PKL', 'PKL2', 'Complete'))
+
+    if print_summary:
+        print('\n=================================')    
+        #print('log_dict: ')
+        #print(log_dict)
+        #print('=================================\n')    
+
+        # Print results
+        print('Overall Result is:')
+        print('  ', summary, '\n')
+
+        tabular_print(log_dict, 'File', ('E2K', 'GWA', 'PKL', 'PKL2', 'Complete'))
+
+    return summary if not fake_run else False
+
 # ========================================================
 
 
-# Specification of directory that contains model files
-dir_path = r'.\samples\StructuralModels'  # folders
+def main():
+    # Specification of directory that contains model files
+    dir_path = r'.\samples\StructuralModels'  # folders
 
-# Set to True to test function
-# Set to False to run conversion checks on real files
-fake_run = True
-
-if fake_run:
-    print('\n** Fake data in use **')
-    log_dict = {
-        'Model 1': {'E2K': True, 'GWA': True, 'PKL': True, 'PKL2': True, 'Complete': True}, 
-        'Model 3B': {'E2K': True, 'GWA': True, 'PKL': True, 'PKL2': True, 'Complete': False}, 
-        'Model with an extremely long name that would mess up the formatting': {'E2K': True, 'GWA': True, 'PKL': True, 'PKL2': True, 'Complete': True}, 
-        'Test model 04': {'E2K': True, 'GWA': False, 'PKL': True, 'PKL2': True, 'Complete': True}, 
-        'Name with chinese characters 中文': {'E2K': True, 'GWA': False, 'PKL': True, 'PKL2': False, 'Complete': False},
-        'Very long 中文 model name with chinese characters': {'E2K': True, 'GWA': False, 'PKL': True, 'PKL2': False, 'Complete': False},
-        }
-    e2k_list = []
+    fake_run = True
+    test_samples(dir_path, True, fake_run)
 
 
-else:
-    # Generation of list of model files in the specified directory
-    e2k_list = file_list_maker(dir_path, (r'*.[eE]2[kK]', r'*.$[eE][tT]'), recursive=True)
-    #print(path_list)
-
-    print(f'\nRunning analyses from \n\t{dir_path}')
-    log_dict = {}
-
-    directory_listing = listdir(dir_path)
-    e2k_list = [join(dir_path, fl) for fl in directory_listing if (fl.casefold().endswith('e2k') or fl.casefold().endswith('$et'))]
-    print('____________________________\n')
-    print('List length', len(e2k_list))
-    [print(e2k) for e2k in e2k_list] # Read in the E2K text file
-
-    # Run all analyses in the list
-    log_dict = run_list(e2k_list)
-
-
-print('\n=================================')    
-#print('log_dict: ')
-#print(log_dict)
-#print('=================================\n')    
-
-
-# Print results
-print('Overall Result is:')
-print('  ', test_summary(log_dict, ('E2K', 'GWA', 'PKL', 'PKL2', 'Complete')), '\n')
-
-tabular_print(log_dict, 'File', ('E2K', 'GWA', 'PKL', 'PKL2', 'Complete'))
-
+if __name__ == '__main__':
+    main()
