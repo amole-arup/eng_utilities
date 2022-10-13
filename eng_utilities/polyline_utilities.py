@@ -211,7 +211,7 @@ def min_x_pt(pt_dict):
     return the_node
 
 
-def loop_finder(pt_dict, connections_dict, start_pt_ID=None, print_points=False):
+def loop_finder(pt_dict, connections_dict, start_pt_ID=None, print_points=False, debug=False):
     """Returns a list containing 
     a closed loop of connected points
     
@@ -238,7 +238,7 @@ def loop_finder(pt_dict, connections_dict, start_pt_ID=None, print_points=False)
     
     # do not shrink connections_dict to limit it to nodes in pt_dict 
 
-    if print_points:
+    if debug:
         #print('input types:', type(pt_dict), type(connections_dict))
         #print('connections_dict:\n', connections_dict)
         pt_set = set(pt_dict.keys())
@@ -258,14 +258,16 @@ def loop_finder(pt_dict, connections_dict, start_pt_ID=None, print_points=False)
         # This is a process that walks through the node network until it gets
         # back to the start (which is why it is a 'while', not a 'for').
         if (ext_angle < -4 * pi) or (ext_angle > 6 * pi) :
-            print(f'\n# "loop_finder" interrupted after {180 * ext_angle / pi:6.1f} deg rotations ({loop_counter} cycles), loop_ID_list is:')
-            print(f'loop_{i} = ', loop_ID_list, '\n')
+            if debug:
+                print(f'\n# "loop_finder" interrupted after {180 * ext_angle / pi:6.1f} deg rotations ({loop_counter} cycles), loop_ID_list is:')
+                print(f'loop_{i} = ', loop_ID_list, '\n')
             i += 1
             break
         loop_counter += 1
         if loop_counter > 1000:
-            print(f'\n#"loop_finder" interrupted after 1000 iterations ({180 * ext_angle / pi:6.1f} deg rotations), loop_ID_list is:')
-            print(f'loop_{i} = ', loop_ID_list, '\n')
+            if debug:
+                print(f'\n#"loop_finder" interrupted after 1000 iterations ({180 * ext_angle / pi:6.1f} deg rotations), loop_ID_list is:')
+                print(f'loop_{i} = ', loop_ID_list, '\n')
             i += 1
             break
                 
@@ -853,7 +855,7 @@ def nodes_outside_loop(node_coord_dict, pt_loop):
     return {'outside': outside_nodes, 'inside': inside_nodes}
         
     
-def all_loops_finder(pt_dict, connections_dict, sort_points=True, print_points=False):
+def all_loops_finder(pt_dict, connections_dict, sort_points=True, debug=False):
     """Returns a list containing 
     a closed loop of connected points"""
 
@@ -878,8 +880,8 @@ def all_loops_finder(pt_dict, connections_dict, sort_points=True, print_points=F
         if sort_points:
             first_point_ID = list(pt_dict)[0]
         
-        loop = loop_finder(pt_dict, connections_dict, first_point_ID, print_points=print_points)
-        if print_points:
+        loop = loop_finder(pt_dict, connections_dict, first_point_ID, debug=debug)
+        if debug:
             print(f'# loop {i}: ', loop)
             print(f'loop_{i} = ', [pt_dict.get(pt) for pt in loop])
 
@@ -892,7 +894,7 @@ def all_loops_finder(pt_dict, connections_dict, sort_points=True, print_points=F
             inside_outside_nodes = nodes_outside_loop(pt_dict, loop)
             inside_nodes = inside_outside_nodes['inside']
             outside_nodes = inside_outside_nodes['outside']
-            if print_points:
+            if debug:
                 #print(f'{i}: outside ', outside_nodes)
                 print(f'outside_{i} = ', [pt_dict.get(pt) for pt in outside_nodes])
                 #print(f'{i}: inside ', inside_nodes)
