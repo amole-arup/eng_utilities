@@ -102,7 +102,7 @@ def sectlib_to_dict(tk_list, filepath=None, df_ready=False):
     return dicts
 
 
-def import_GSA_sections(filepath=None):
+def import_GSA_sections(filepath=None, debug=False):
     """Collates all the section data from the Oasys sectlib database, which is 
     organised in four tables.
     
@@ -142,7 +142,7 @@ def import_GSA_sections(filepath=None):
         v.update({k0: v0 for k0, v0 in catdata_data.items() if k0 in catdata_cols})
         catdata_cat_num = v.get('CATDATA_CAT_NUM', -1)
         #catdata_cat_num = catdata_data.get('CATDATA_CAT_NUM')
-        if i in (0,1,20,50,1000):
+        if (i in (0,1,20,50,1000)) and debug:
             print(catdata_cat_num)
         cat_data = cat_dict.get(catdata_cat_num, {})
         v.update({k0: v0 for k0, v0 in cat_data.items() if k0 in cat_cols})
@@ -1634,7 +1634,7 @@ def write_GWA_model(
 
         gwa.write('END\n')
     if exists(GWApath):
-        print(f'{GWApath} written')
+        if debug: print(f'{GWApath} written')
 
 
 def write_node(gwa, NODE_dict, SPRING_PROPS_dict={}):

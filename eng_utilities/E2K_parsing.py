@@ -434,9 +434,10 @@ def E2KtoDict(E2K_model_path, debug=False, **kwargs):
     is_consistent, log_text = story_consistency_check(E2K_dict, debug=debug)
     ParseLog_list.append(log_text)
 
-    if not is_consistent:
+    if not is_consistent and debug:
+        print('Storey data is not consistent:')
         print(log_text)
-
+        
     if debug:
         print(f'\n** E2K_dict Summary (E2KtoDict) ****')
         for k,v in E2K_dict.items():
@@ -670,17 +671,9 @@ def run_all(E2K_model_path, get_pickle=False, save_pickle=True, find_loops=False
         if debug: print(f'\nE2K_dict is a {type(E2K_dict)}')
         if debug: key_printout(E2K_dict)
         pickle.dump(E2K_dict, open(pickle_path_2, 'wb'))
-        print('second pickle dump succeeded')
+        if debug: print('-- Second pickle file ' + 
+                (f'exists\n{pickle_path_2}\n' if exists(pickle_path_2) else f'does NOT exist\n{pickle_path_2}\n'))
         
-        """try:
-            pickle.dump(E2K_dict, open(pickle_path_2, 'wb'))
-            print('\n** Second pickle dump succeeded')
-        except:
-            print('\n** Second pickle dump failed')"""
-    
-        print('-- Second pickle file ' + 
-            (f'exists\n{pickle_path_2}\n' if exists(pickle_path_2) else f'does NOT exist\n{pickle_path_2}\n'))
-
     if debug:
         print(f'\n** E2K_dict Final Summary (run_all) ****')
         # key_printout(E2K_dict)

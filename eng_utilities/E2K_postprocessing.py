@@ -139,10 +139,10 @@ def enhance_frame_properties(f_name, f_dict, E2K_dict,
     if mat is None:
         # logging errors
         if (shape.casefold() != 'nonprismatic'):
-            print(f'Log: MATERIAL keyword is not present in {f_name} dict: \n\t{f_dict}')
+            if debug: print(f'Log: MATERIAL keyword is not present in {f_name} dict: \n\t{f_dict}')
     elif not m_dict:
         # logging errors
-        print(f'Log: The material for {f_name} ({mat}) is not in MAT_PROP_dict')
+        if debug: print(f'Log: The material for {f_name} ({mat}) is not in MAT_PROP_dict')
         #raise ValueError('Missing material dictionary data')
     
     temp_f_dict_list = []
@@ -187,11 +187,11 @@ def enhance_frame_properties(f_name, f_dict, E2K_dict,
     elif shape == 'NA':
         stype = 'NA'
         if debug: print(f'++ {f_name}: Mat: {mat}, Shape: {shape}, ShapeType: {stype}')
-        enhance_CALC_properties(f_name, f_dict, m_dict, model_units)
+        enhance_CALC_properties(f_name, f_dict, m_dict, model_units, debug=debug)
     else:
         stype = 'CALC' # assume it is a standard section
         if debug: print(f'++ {f_name}: Mat: {mat}, Shape: {shape}, ShapeType: {stype}')
-        enhance_CALC_properties(f_name, f_dict, m_dict, model_units)
+        enhance_CALC_properties(f_name, f_dict, m_dict, model_units, debug=debug)
         
     # returns errors, all changes are made to the dictionary
     temp_f_dict_list.append(res)
@@ -214,7 +214,7 @@ def enhance_SD_properties(f_dict, sd_dict):
 
 
 def enhance_CALC_properties(f_name, f_dict, m_dict, 
-                        model_units=Units('N', 'm', 'C')):
+                        model_units=Units('N', 'm', 'C'), debug=False):
     """
     
     """
@@ -243,13 +243,13 @@ def enhance_CALC_properties(f_name, f_dict, m_dict,
     elif shape in ('Steel Channel', 'Concrete Channel', 'Channel', 'CHANNEL'): 
         props = CH_props_func(f_dict)
     elif shape in ('Buckling Restrained Brace'): # BUCKLING RESTRAINED BRACE SECTIONS
-        print(f'WARNING - check units of {f_name}: {f_dict}')  # TODO Fix units
+        if debug: print(f'WARNING - check units of {f_name}: {f_dict}')  # TODO Fix units
         props = R_props_func(f_dict)  # TODO Temporary
     elif shape in ('NA'):
         props = {}
     else:
         # logging errors
-        print(f'Log: No section ("shape") property enhancement functions found for {f_name}:\n', f_dict)
+        if debug: print(f'Log: No section ("shape") property enhancement functions found for {f_name}:\n', f_dict)
         props = {}
     
     # ('Filled Steel Tube') # 'FILLMATERIAL'
@@ -265,7 +265,7 @@ def enhance_CALC_properties(f_name, f_dict, m_dict,
     
     # #### EDIT THIS #######
     sh_dict = convert_prop_units(f_dict, model_units.length)
-    if sh_dict is None:
+    if sh_dict is None and debug:
         # logging errors
         print('Log (enhance_CALC_properties): convert_prop_units has failed with:')
         print(f'   shape_dict: {sh_dict}')
@@ -305,7 +305,7 @@ def enhance_CAT_properties(f_name, f_dict, m_dict,
         
         # 4. Gather material density and converted section area
         sh_dict = convert_prop_units(shape_dict, model_units.length)
-        if sh_dict is None:
+        if sh_dict is None and debug:
             # logging errors
             print('Log (enhance_CAT_properties): convert_prop_units has failed with:')
             print(f'   shape_dict: {shape_dict}')
@@ -432,7 +432,7 @@ def FILE_PP(E2K_dict, debug=False):
             file_date = parser.parse(date_txt)
         except:
             # logging
-            print('Log (File_PP): First date-parsing attempt failed')
+            if debug: print('Log (File_PP): First date-parsing attempt failed')
             file_date = parser.parse(date_txt.split()[0])
         #print(file_path)
         #print(file_date)
@@ -917,8 +917,9 @@ def LINE_CONN_PP(E2K_dict, debug=False):
             for k2,v2 in v.items():
                 # If there are multiple definitions of a LINE, provide a warning and use the last
                 if isinstance(v2[0],(list, tuple)):
-                    print(f'WARNING: multiple points: {k}: {v}\n  v2 is {v2}')
-                    [print(f'  N1: {vv[0]}: {POINTS_dict.get(vv[0])} | N2: {vv[0]}: {POINTS_dict.get(vv[1])}') for vv in v2]                    
+                    if debug:
+                        print(f'WARNING: multiple points: {k}: {v}\n  v2 is {v2}')
+                        [print(f'  N1: {vv[0]}: {POINTS_dict.get(vv[0])} | N2: {vv[0]}: {POINTS_dict.get(vv[1])}') for vv in v2]                    
                     v2 = v2[-1]
                 pd_list.append(('Type', k2))
                 pd_list.append(('N1', (v2[0],v2[2])))
@@ -1048,7 +1049,7 @@ def LINE_ASSIGNS_PP(E2K_dict, debug=False):
             
             # add section area (needs access to section definition containing section areas etc
             S_data = mem_dict.get('SECTION')
-            if isinstance(S_data,list): print('S_data:', S_data)
+            if isinstance(S_data,list) and debug: print('S_data:', S_data)
             f_dict = FRAME_PROP_dict.get(S_data,{})
             #f_dict = FRAME_PROP_dict.get(mem_dict.get('SECTION'),{})
             agg_props = f_dict.get('Frame_Agg_Props', [])
@@ -1410,7 +1411,7 @@ def story_geometry(E2K_dict, find_loops = False, debug=False):
                 if debug:
                     print('loop', end = ' | ')        
                 try:
-                    loops_list = all_loops_finder(nc_dict, NODE_Connected_Nodes_dict)
+                    loops_list = all_loops_finder(nc_dict, NODE_Connected_Nodes_dict, debug=debug)
 
                     # Adds loop definitions and areas to dictionary
                     diaph_loops = DIAPHRAGM_LOOPS_dict.get(lower_story, [])

@@ -7,18 +7,7 @@ the import of matplotlib and the functions are held
 within a try-except, and dummy functions are provided.
 """
 
-def bounding_box2D(coords):
-    """Runs through a collection of x,y tuple pairs and 
-    extracts the values (xmin,ymin),(xmax,ymax)."""
-    xmin = coords[0][0]  ;   xmax = coords[0][0]
-    ymin = coords[0][1]  ;   ymax = coords[0][1]
-    for xy in coords[1:]:
-        x, y = xy
-        if x < xmin: xmin = x
-        if x > xmax: xmax = x
-        if y < ymin: ymin = y
-        if y > ymax: ymax = y
-    return (xmin, ymin),(xmax, ymax)
+from polyline_utilities import bounding_box2D
 
 
 # Plotting Utility
@@ -150,3 +139,4 @@ try:
 except:
     print('Triangle is not installed')
     
+
