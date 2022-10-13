@@ -62,7 +62,7 @@ def file_list_maker(files_or_dirs, patterns, recursive=False):
     return file_list
 
 
-def run_list(e2k_list):
+def run_list(e2k_list, get_pickle=False, debug=False):
     
     log_dict = {}
     
@@ -77,11 +77,11 @@ def run_list(e2k_list):
             print('--------------------------------')
             file_dict = {'E2K': True}
 
-            get_pickle = False
+            
 
             try:
                 print(f'\n...Parsing E2K - {eek} ')
-                E2K_dict = run_all(eek, get_pickle=get_pickle, debug=False)
+                E2K_dict = run_all(eek, get_pickle=get_pickle, debug=debug)
                 print(f'\n...Completed parsing - {eek} ')
                 if exists(file_root + '.pkl'):
                     file_dict['PKL'] = True
@@ -91,7 +91,7 @@ def run_list(e2k_list):
 
                 GWA_file = file_root + '.gwa'
                 print(f'\n...writing to GWA - {GWA_file}')
-                write_GWA(E2K_dict, GWA_file)
+                write_GWA(E2K_dict, GWA_file, debug=debug)
                 print(('\n...Completed writing' if exists(GWA_file) else '\n...Failed to write') + f' to GWA - {GWA_file}')
                 if exists(GWA_file):
                     file_dict['GWA'] = True

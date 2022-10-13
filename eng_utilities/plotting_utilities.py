@@ -7,7 +7,7 @@ the import of matplotlib and the functions are held
 within a try-except, and dummy functions are provided.
 """
 
-from polyline_utilities import bounding_box2D
+from eng_utilities.polyline_utilities import bounding_box2D
 
 
 # Plotting Utility
