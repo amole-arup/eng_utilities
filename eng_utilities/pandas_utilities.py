@@ -123,6 +123,7 @@ def df_dict(E2K_dict, debug = False):
     )]
 
     LOAD_COMBO_dict = E2K_dict.get('LOAD COMBINATIONS',{}).get('COMBO',{})
+    #Member_SUMMARY_dict = E2K_dict.get('MODEL SUMMARY',{}).get('MEMBERS SUMMARY',{})
 
     #return 
 
@@ -134,6 +135,8 @@ def df_dict(E2K_dict, debug = False):
     L_df = to_df(LINE_dict)
     A_df = to_df(AREA_dict)
     LP_df = to_df(LOADCASE_dict)
+    WD_df = to_df(WIND_dict)
+    SD_df = to_df(SEISMIC_dict)
     PL_df = to_df2(POINT_LOAD_dict)
     LL_df = to_df2(LINE_LOAD_dict)
     AL_df = to_df2(AREA_LOAD_dict)
@@ -143,6 +146,7 @@ def df_dict(E2K_dict, debug = False):
     D_df = to_df(DIAPHRAGMS_dict), 
     DG_df = to_df(DIAPHRAGM_GROUPS_dict), 
     DL_df = to_df(DIAPHRAGM_LOOPS_dict)
+    #SUMM_df = to_df(SUMMARY_dict)
     
     return {
         'MAT_PROPS' : MP_df,
@@ -153,6 +157,8 @@ def df_dict(E2K_dict, debug = False):
         'LINE' : L_df,
         'AREA' : A_df,
         'LOADCASE' : LP_df,
+        'WIND' : WD_df,
+        'SEISMIC' : SD_df,
         'POINT_LOAD' : PL_df,
         'LINE_LOAD' : LL_df,
         'AREA_LOAD' : AL_df,
