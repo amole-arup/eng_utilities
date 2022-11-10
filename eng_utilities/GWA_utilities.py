@@ -687,7 +687,7 @@ def write_GWA(E2K_dict, GWApath, GSA_ver=10, add_poly=False, debug=False): # sav
                     mat_type = mat_dict.get('DESIGNTYPE', '')
                 else:
                     mat_type = mat_dict.get('TYPE', '')
-                mat_dict['GWA_Type'] = ETABS2GWA_mat_type_dict.get(mat_type, 'OTHER')
+                mat_dict['GWA_Type'] = ETABS2GWA_mat_type_dict.get(mat_type, 'GENERIC')
                 
                 if debug: print(f'Material = {name}; Material_Type = {mat_type}')
                 

@@ -20,7 +20,7 @@ except:
 
 
 try:
-    import pandasgui
+    #import pandasgui
     from pandasgui import show as _pd_show
     from pandasgui import __version__ as pdgver
     print(f'PandasGUI version is {pdgver}')
