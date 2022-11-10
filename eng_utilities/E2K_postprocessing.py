@@ -344,7 +344,7 @@ def get_mat_type(m_dict):
 
 def enhance_shell_props(s_dict, MAT_PROP_dict):
     """"""
-    if (s_dict.get('PROPTYPE').casefold() == 'deck'): # DECK
+    if (s_dict.get('PROPTYPE','').casefold() == 'deck'): # DECK
         conc_mat = s_dict.get('CONCMATERIAL')
         mc_dict = MAT_PROP_dict.get(conc_mat, {})
         mc_type = get_mat_type(mc_dict)
@@ -365,7 +365,7 @@ def enhance_shell_props(s_dict, MAT_PROP_dict):
         agg_props.append(Shell_Agg_Props(deck_mat, md_type, md_unit_wt, T_AVE))
         s_dict['Shell_Agg_Props'] = agg_props
         
-    elif (s_dict.get('PROPTYPE').casefold() == 'wall'): # WALL
+    elif (s_dict.get('PROPTYPE','').casefold() == 'wall'): # WALL
         conc_mat = s_dict.get('MATERIAL')
         mc_dict = MAT_PROP_dict.get(conc_mat, {})
         mc_type = get_mat_type(mc_dict)
@@ -375,7 +375,7 @@ def enhance_shell_props(s_dict, MAT_PROP_dict):
         agg_props.append(Shell_Agg_Props(conc_mat, mc_type.casefold(), mc_unit_wt, wall_thickness))
         s_dict['Shell_Agg_Props'] = agg_props
         
-    elif (s_dict.get('PROPTYPE').casefold() == 'slab'): # SLAB
+    elif (s_dict.get('PROPTYPE','').casefold() == 'slab'): # SLAB
         conc_mat = s_dict.get('MATERIAL')
         mc_dict = MAT_PROP_dict.get(conc_mat, {})
         mc_type = get_mat_type(mc_dict)
@@ -523,7 +523,7 @@ def FRAME_SECTIONS_PP(E2K_dict, section_def_dict, debug=False):
 
     for i, (f_name, f_dict) in enumerate(FRAME_PROP_dict.items()):
         if f_dict.get('ID', 0) != 1:  # maintain the 'NONE' as number 1 
-            f_dict['ID'] = i + 2  # because GSA does not include number zero
+            f_dict['ID'] = i + 2  # because GSA does not include number zero and `1` is for NONE
         #
         if debug and i < 3:
             print(f'{i} | {f_name} :  {f_dict}')
@@ -765,9 +765,14 @@ def SHELL_PROPERTIES_PP(E2K_dict, debug=False):
         
         SHELL_PROP_dict = {**SLAB_PROP_dict, **DECK_PROP_dict, **WALL_PROP_dict}
     
+    # Define dummy frame section property for line members with property 'NONE'
+    SHELL_PROP_dict['NONE'] = {'MATERIAL': 'ZERO_WT', 'ID': 1}
+
+
     # Enhance the properties with aggregated values
     for i, s_dict in enumerate(SHELL_PROP_dict.values()):
-        s_dict['ID'] = i + 1  # because GSA does not include number zero
+        if s_dict.get('ID', 0) != 1:  # maintain the 'NONE' as number 1 
+            s_dict['ID'] = i + 2  # because GSA does not include number zero and `1` is for NONE
         enhance_shell_props(s_dict, MAT_PROP_dict)
     
     E2K_dict['SHELL PROPERTIES'] = {'SHELLPROP': SHELL_PROP_dict}
@@ -838,7 +843,7 @@ def POINT_ASSIGNS_PP(E2K_dict, debug=False):
     DIAPHRAGMS_dict = E2K_dict.get('DIAPHRAGM NAMES', {}).get('DIAPHRAGM', {})
     
     # DIAPHRAGM_GROUPS_dict = {}
-    if E2K_dict.get('DIAPHRAGM NAMES'):
+    if E2K_dict.get('DIAPHRAGM NAMES') is not None:
         if E2K_dict['DIAPHRAGM NAMES'].get('GROUPS', None) is None:
             E2K_dict['DIAPHRAGM NAMES']['GROUPS'] = {}
     DIAPHRAGM_GROUPS_dict = E2K_dict['DIAPHRAGM NAMES']['GROUPS']
@@ -881,7 +886,7 @@ def POINT_ASSIGNS_PP(E2K_dict, debug=False):
             # Add to Diaphragm groups
             if nd_dict.get('DIAPH', None) is not None: 
                 diaph_key = (story, nd_dict.get('DIAPH'))
-                # if key exists extract values (a list), otherwise return empty list
+                # if key exists, extract values (a list), otherwise return empty list
                 d_group = DIAPHRAGM_GROUPS_dict.get(diaph_key, [])
                 # append current node to group list and assign to dictionary
                 d_group.append(nd_key)
