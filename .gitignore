@@ -56,7 +56,8 @@ coverage.xml
 *.pot
 
 # Python stuff:
-*.pkl
+*.pkl             # do not store pickle files
+!section_dict.pkl # except pickled file of sections
 
 # Django stuff:
 *.log
@@ -81,8 +82,8 @@ target/
 .ipynb_checkpoints
 
 # Samples
-samples/
-notebooks/
+# samples/
+# notebooks/
 
 # IPython
 profile_default/
@@ -137,5 +138,5 @@ dmypy.json
 
 .fake
 .ionide
-notebooks/section_dict.pkl
+# notebooks/section_dict.pkl
 samples/StructuralModels/*.gwa
