@@ -156,7 +156,10 @@ def build_section_dict(ETABS_root_dir=None, flat = False, reimport = False, debu
         if not exists(ETABS_root_dir):
             ETABS_root_dir = None
     
-    if ETABS_root_dir is None:
+    if os.name != 'nt':
+        print('OS is not Windows and no section file found (section_dict.pkl)')
+        return {}
+    elif ETABS_root_dir is None:
         # Directory containing section data has not been provided
         CSi_dir = r'C:\Program Files\Computers and Structures'
         ETABS_dirs = [folder for folder in listdir(CSi_dir) if folder.startswith('ETABS')]
