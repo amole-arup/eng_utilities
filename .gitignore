@@ -56,7 +56,8 @@ coverage.xml
 *.pot
 
 # Python stuff:
-*.pkl
+*.pkl  #Exclude all pkls
+!section_dict.pkl #Except for section_dict
 
 # Django stuff:
 *.log
