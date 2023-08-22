@@ -4,12 +4,19 @@ from math import pi, sin, cos, tan, atan, atan2, asin, acos, exp, log, log10
 from functools import reduce
 from operator import mul
 
-def rad_to_deg(ang):
+Vector2D = tuple[float, float]
+Vector3D = tuple[float, float, float]
+VectorND = tuple[float]
+Polyline3D = tuple[Vector3D]
+Vector3DList = list[Vector3D]
+
+
+def rad_to_deg(ang:float) -> float:
     """Converts radians to degrees"""
     return ang * 180 / pi
 
 
-def deg_to_rad(deg):
+def deg_to_rad(deg:float) -> float:
     """Converts degrees to radians"""
     return deg / 180 * pi
 
