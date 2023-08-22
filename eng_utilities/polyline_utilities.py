@@ -168,6 +168,32 @@ def perim_rotate2D(perim, ang):
     return [rotate2D(pt, ang) for pt in perim]
 
 
+def normal_area_3D(pt3dlist):
+    """Calculates the area as a normal vector, of sections 
+    defined by closed coplanar polylines on any plane (does 
+    not need to match orthogonal planes).
+    Polylines should be defined as a list of triplets.
+    Note that there is no check if points are not coplanar 
+    or if the lines cross.
+    NB elsewhere called `normal_vect_area`."""
+    # close the polyline if necessary
+    if pt3dlist[0] != pt3dlist[-1]: pt3dlist.append(pt3dlist[0])
+    v_sum = [0.0, 0.0, 0.0]
+    pt1 = pt3dlist[0]
+    # Move the coordinates so that the first is at 0,0,0
+    vlist = [sub3D(pt,pt1) for pt in pt3dlist[1:-1]]
+    v1 = vlist[0]
+    # Iterate over the vectors
+    for v2 in vlist[1:]:
+        v_cross = cross3D(v1,v2)
+        v_sum = add3D(v_sum, v_cross)
+        # v1 = v2    -- wrong
+    # v_sum is a normal vector. The area is half the magnitude.
+    area  = scale3D(v_sum, 0.5)
+    #print("So the Area of Slab is ..."+ str(area) )
+    return area # This will NOT always be positive
+
+
 def sec_area_3D(pt3dlist):
     """Calculates the area of sections defined by
     closed coplanar polylines on any plane (does not need 
@@ -186,7 +212,7 @@ def sec_area_3D(pt3dlist):
     for v2 in vlist[1:]:
         v_cross = cross3D(v1,v2)
         v_sum = add3D(v_sum, v_cross)
-        v1 = v2    
+        # v1 = v2    --- wrong
     # v_sum is a normal vector. The area is half the magnitude.
     area  = 0.5 * mag3D(v_sum)
     #print("So the Area of Slab is ..."+ str(area) )
